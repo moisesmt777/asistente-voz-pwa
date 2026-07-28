@@ -47,6 +47,16 @@ class App {
     this.ui.setState('idle');
     this.ui.setBrandSub(brainState.webgpu ? 'IA local disponible' : 'Modo reglas (sin WebGPU)');
 
+    // Reactivar el último modelo usado (ya descargado → carga rápida desde caché)
+    const savedModel = await this.memory.getPref('model', null);
+    if (brainState.webgpu && savedModel) {
+      this.brain.loadModel(savedModel, (r) => {
+        const pct = Math.round((r.progress || 0) * 100);
+        this.ui.setBrandSub(`Cargando IA… ${pct}%`);
+      }).then(() => this.ui.setBrandSub('IA local activa 🧠'))
+        .catch(() => this.ui.setBrandSub('IA local disponible'));
+    }
+
     this._wireVoice();
     this._wireUI();
     this._startAlarmLoop();
@@ -246,7 +256,7 @@ class App {
         <div class="muted">Todo se guarda en tu dispositivo (IndexedDB). Nada sale de tu teléfono.</div>
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">🗑️ Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.0.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.1.0</div>
     `;
     this._wireSettings();
   }

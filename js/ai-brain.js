@@ -154,24 +154,28 @@ export class MemoryStore {
 /* ============================================================
    2) CEREBRO DE IA (WebLLM + fallback de reglas)
    ============================================================ */
-const WEBLLM_URL = 'https://esm.run/@mlc-ai/web-llm';
+/* Versión fijada: los IDs de RECOMMENDED_MODELS están verificados contra el
+   prebuiltAppConfig de esta versión (evita que 'latest' los rompa un día). */
+const WEBLLM_URL = 'https://esm.run/@mlc-ai/web-llm@0.2.84';
 
-/* Modelos pequeños recomendados para móviles (orden por ligereza) */
+/* Modelos pequeños recomendados para móviles (orden por VRAM requerida,
+   según el prebuiltAppConfig de WebLLM 0.2.84) */
 export const RECOMMENDED_MODELS = [
-  { id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC', label: 'Qwen2.5 0.5B (ultraligero)', mb: 950 },
-  { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 1B (equilibrado)', mb: 1130 },
-  { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen2.5 1.5B (mejor calidad)', mb: 1630 },
-  { id: 'gemma-2-2b-it-q4f16_1-MLC', label: 'Gemma 2 2B (gama alta)', mb: 1900 },
-  { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC', label: 'Phi-3.5 mini (gama alta)', mb: 3670 }
+  { id: 'gemma3-1b-it-q4f16_1-MLC', label: 'Gemma 3 1B (equipos modestos)', mb: 711 },
+  { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 1B (equilibrado)', mb: 879 },
+  { id: 'Qwen3-0.6B-q4f16_1-MLC', label: 'Qwen3 0.6B (compacto)', mb: 1403 },
+  { id: 'Qwen3-1.7B-q4f16_1-MLC', label: 'Qwen3 1.7B (recomendado ★)', mb: 2037 },
+  { id: 'Qwen3.5-2B-q4f16_1-MLC', label: 'Qwen3.5 2B (última generación)', mb: 2245 },
+  { id: 'Phi-4-mini-instruct-q4f16_1-MLC', label: 'Phi-4 mini 3.8B (gama alta)', mb: 3438 }
 ];
 
 export class AIBrain {
   constructor(memory, opts = {}) {
     this.memory = memory;
     this.opts = Object.assign({
-      defaultModel: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
+      defaultModel: 'Qwen3-1.7B-q4f16_1-MLC',  // mejor equilibrio español/tamaño (Fase 1)
       temperature: 0.6,
-      maxTokens: 320
+      maxTokens: 256                            // respuestas breves, aptas para voz
     }, opts);
     this.engine = null;
     this.modelId = null;
@@ -204,6 +208,7 @@ export class AIBrain {
 
   /* Carga (descarga + compila) el modelo en el dispositivo */
   async loadModel(modelId, onProgress) {
+    if (this.loading) throw new Error('Ya hay una carga de modelo en curso.');
     if (!(await AIBrain.hasWebGPU())) {
       throw new Error('WebGPU no está disponible en este dispositivo/navegador.');
     }
@@ -275,7 +280,9 @@ export class AIBrain {
   async chat(userText) {
     if (this.mode === 'llm' && this.engine) {
       try {
-        const system = await this.buildSystemPrompt();
+        let system = await this.buildSystemPrompt();
+        // Qwen3/3.5 "razonan" con bloques <think>: los desactivamos para voz (soft switch)
+        if (/^Qwen3/i.test(this.modelId || '')) system += '\n/no_think';
         const history = await this.memory.recentMessages(8);
         const messages = [{ role: 'system', content: system }];
         for (const m of history) {
@@ -288,8 +295,9 @@ export class AIBrain {
           temperature: this.opts.temperature,
           max_tokens: this.opts.maxTokens
         });
-        const text = res.choices[0].message.content.trim();
-        return { text, mode: 'llm' };
+        const text = stripThink(res.choices[0].message.content);
+        if (text) return { text, mode: 'llm' };
+        return { text: this._rulesReply(userText), mode: 'rules' };
       } catch (e) {
         console.warn('[AIBrain] LLM falló, uso reglas:', e);
         return { text: this._rulesReply(userText), mode: 'rules' };
@@ -312,6 +320,14 @@ export class AIBrain {
     if (/\b(qué día|fecha)\b/.test(t)) return 'Hoy es ' + new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' }) + '.';
     return 'Entendido. Para activar respuestas más inteligentes puedes descargar un modelo de IA en Ajustes. Mientras tanto, puedo gestionar tus notas, tareas, eventos y alarmas.';
   }
+}
+
+/* Quita bloques de razonamiento <think>…</think> (Qwen3) del texto final */
+function stripThink(s) {
+  let t = (s || '').replace(/<think>[\s\S]*?<\/think>/g, '');
+  const i = t.indexOf('<think>');
+  if (i !== -1) t = t.slice(0, i); // bloque sin cerrar (cortado por max_tokens)
+  return t.trim();
 }
 
 /* Utilidad compartida */

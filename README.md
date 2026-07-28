@@ -12,7 +12,7 @@ Asistente virtual **controlado por voz**, empaquetado como **PWA instalable en A
 - **Voz (STT):** Web Speech API nativa (rápida, integrada en Android) con **adaptador Whisper** vía Transformers.js (WASM/ONNX) para mayor precisión.
 - **Voz (TTS):** SpeechSynthesis con selección de voz local en español, sin latencia.
 - **Wake word / VAD:** palabra de activación por escucha continua + detección de actividad de voz por energía (RMS) para autocortar la grabación.
-- **IA local:** LLM en el dispositivo con **WebLLM** sobre **WebGPU** (modelos pequeños: Qwen2.5, Llama 3.2, Phi-3.5). **Cerebro de reglas de respaldo** cuando no hay WebGPU.
+- **IA local:** LLM en el dispositivo con **WebLLM** sobre **WebGPU** (modelos pequeños: Qwen3/3.5, Gemma 3, Llama 3.2, Phi-4 mini; por defecto **Qwen3 1.7B**). **Cerebro de reglas de respaldo** cuando no hay WebGPU.
 - **Memoria persistente:** notas, tareas, eventos, alarmas, historial y preferencias en **IndexedDB**.
 - **Auto-mejora:** *few-shot prompting* dinámico que se adapta a los comandos más usados y al feedback (👍/👎).
 - **Skills:** notas, tareas (con prioridad), agenda/eventos y alarmas — por voz o toque.
@@ -76,7 +76,7 @@ asistente-voz-pwa/
 │   └── icons/                 # Iconos PWA (192, 512, maskable, apple-touch)
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml         # CI/CD → GitHub Pages
+│       └── deploy.yml         # CI/CD → GitHub Pages (opcional, vía Actions)
 ├── package.json
 ├── .gitignore
 ├── LICENSE
@@ -129,9 +129,13 @@ git push -u origin main
 
 ### 3) Activar GitHub Pages (despliegue automático)
 
-1. En GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. Cada `push` a `main` dispara el workflow `.github/workflows/deploy.yml` y publica el sitio.
+**Vía A — Deploy from a branch (la activa en este repo):**
+
+1. En GitHub: **Settings → Pages → Build and deployment → Source: Deploy from a branch** → rama `main`, carpeta `/ (root)`.
+2. Cada `push` a `main` republica el sitio (~1 min). No requiere workflow ni build.
 3. La URL será `https://<tu-usuario>.github.io/asistente-voz-pwa/`.
+
+**Vía B — GitHub Actions:** sube `.github/workflows/deploy.yml` (el push debe hacerse con un token con scope `workflow`) y elige **Source: GitHub Actions**.
 
 > **Alternativa Vercel:** *Import Project* → framework **Other** → sin build command → output `/`. Deploy.
 
