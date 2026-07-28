@@ -14,7 +14,7 @@
    1) MEMORIA PERSISTENTE (IndexedDB)
    ============================================================ */
 const DB_NAME = 'asistente-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: añade el store 'vectors' (búsqueda semántica)
 
 export class MemoryStore {
   constructor() { this.db = null; }
@@ -40,6 +40,10 @@ export class MemoryStore {
         if (!db.objectStoreNames.contains('stats')) {
           db.createObjectStore('stats', { keyPath: 'cmd' });
         }
+        if (!db.objectStoreNames.contains('vectors')) {
+          const v = db.createObjectStore('vectors', { keyPath: 'id' });
+          v.createIndex('type', 'type', { unique: false });
+        }
       };
       req.onsuccess = () => { this.db = req.result; resolve(this.db); };
       req.onerror = () => reject(req.error);
@@ -64,10 +68,15 @@ export class MemoryStore {
     if (!item.ts) item.ts = Date.now();
     const store = await this._tx('items', 'readwrite');
     await this._wrap(store.put(item));
+    if (this.onchange) { try { this.onchange('put', item); } catch (e) {} }
     return item;
   }
   async getItem(id) { return this._wrap((await this._tx('items')).get(id)); }
-  async deleteItem(id) { return this._wrap((await this._tx('items', 'readwrite')).delete(id)); }
+  async deleteItem(id) {
+    const r = await this._wrap((await this._tx('items', 'readwrite')).delete(id));
+    if (this.onchange) { try { this.onchange('delete', { id }); } catch (e) {} }
+    return r;
+  }
   async listItems(type) {
     const store = await this._tx('items');
     const idx = store.index('type');
@@ -141,9 +150,40 @@ export class MemoryStore {
     return (all || []).sort((a, b) => b.count - a.count).slice(0, n);
   }
 
+  /* ---- Vectores (búsqueda semántica local) ---- */
+  async putVector(v) { return this._wrap((await this._tx('vectors', 'readwrite')).put(v)); }
+  async allVectors() { return (await this._wrap((await this._tx('vectors')).getAll())) || []; }
+  async deleteVector(id) { return this._wrap((await this._tx('vectors', 'readwrite')).delete(id)); }
+
+  async clearStats() { return this._wrap((await this._tx('stats', 'readwrite')).clear()); }
+
+  /* ---- Respaldo: exportar / importar toda la memoria ---- */
+  async exportAll() {
+    const items = await this._wrap((await this._tx('items')).getAll());
+    const messages = await this._wrap((await this._tx('messages')).getAll());
+    const stats = await this._wrap((await this._tx('stats')).getAll());
+    return {
+      app: 'asistente-voz-pwa', formato: 2, exportado: new Date().toISOString(),
+      prefs: await this.allPrefs(), items: items || [], messages: messages || [], stats: stats || []
+    };
+  }
+
+  /* Los vectores no se exportan: se regeneran reindexando tras importar */
+  async importAll(data) {
+    if (!data || data.app !== 'asistente-voz-pwa' || !Array.isArray(data.items))
+      throw new Error('Archivo de respaldo no válido.');
+    for (const it of data.items) await this.putItem(it);
+    for (const m of (data.messages || [])) await this.addMessage(m);
+    for (const [k, v] of Object.entries(data.prefs || {})) await this.setPref(k, v);
+    for (const rec of (data.stats || [])) {
+      await this._wrap((await this._tx('stats', 'readwrite')).put(rec));
+    }
+    return { items: data.items.length, messages: (data.messages || []).length };
+  }
+
   async clearAll() {
     const db = await this.open();
-    await Promise.all(['items', 'messages', 'kv', 'stats'].map((s) =>
+    await Promise.all(['items', 'messages', 'kv', 'stats', 'vectors'].map((s) =>
       this._wrap(db.transaction(s, 'readwrite').objectStore(s).clear())
     ));
   }
@@ -179,6 +219,7 @@ export class AIBrain {
     }, opts);
     this.engine = null;
     this.modelId = null;
+    this.semantic = null;         // SemanticMemory (RAG local); lo conecta app.js
     this.mode = 'rules';          // 'llm' | 'rules'
     this.loading = false;
   }
@@ -278,9 +319,18 @@ export class AIBrain {
 
   /* Respuesta conversacional (usa LLM si está listo; si no, respuesta simple) */
   async chat(userText) {
+    // Recuerdos relevantes por significado (si la búsqueda semántica está activa)
+    let recall = [];
+    if (this.semantic && this.semantic.ready) {
+      try { recall = await this.semantic.search(userText, 4); } catch (e) {}
+    }
     if (this.mode === 'llm' && this.engine) {
       try {
         let system = await this.buildSystemPrompt();
+        if (recall.length) {
+          system += '\nRecuerdos relevantes de la memoria del usuario (úsalos solo si vienen al caso):' +
+            recall.map((r) => `\n- [${r.type}] ${r.text}`).join('');
+        }
         // Qwen3/3.5 "razonan" con bloques <think>: los desactivamos para voz (soft switch)
         if (/^Qwen3/i.test(this.modelId || '')) system += '\n/no_think';
         const history = await this.memory.recentMessages(8);
@@ -300,10 +350,17 @@ export class AIBrain {
         return { text: this._rulesReply(userText), mode: 'rules' };
       } catch (e) {
         console.warn('[AIBrain] LLM falló, uso reglas:', e);
-        return { text: this._rulesReply(userText), mode: 'rules' };
+        return { text: this._maybeRecallReply(userText, recall) || this._rulesReply(userText), mode: 'rules' };
       }
     }
-    return { text: this._rulesReply(userText), mode: 'rules' };
+    return { text: this._maybeRecallReply(userText, recall) || this._rulesReply(userText), mode: 'rules' };
+  }
+
+  /* Sin LLM: si la pregunta es de memoria, responde con los recuerdos */
+  _maybeRecallReply(text, recall) {
+    if (!recall || !recall.length) return null;
+    if (!/qué (anoté|apunté|guardé|dije)|recuerdas|qué (tengo|hay|sé) (de|sobre)|algo (de|sobre)/i.test(text)) return null;
+    return 'Esto es lo que tengo relacionado: ' + recall.map((r) => r.text).join(' · ') + '.';
   }
 
   /* Cerebro de reglas de respaldo: respuestas conversacionales básicas

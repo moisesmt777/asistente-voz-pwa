@@ -12,6 +12,7 @@
 import { VoiceEngine } from './voice-engine.js';
 import { AIBrain, MemoryStore } from './ai-brain.js';
 import { CommandRouter, cuando } from './commands.js';
+import { SemanticMemory } from './semantic-memory.js';
 import { UI } from './ui.js';
 
 const $ = (s) => document.querySelector(s);
@@ -23,6 +24,8 @@ class App {
     this.voice = new VoiceEngine({ lang: 'es-ES' });
     this.brain = new AIBrain(this.memory);
     this.router = new CommandRouter(this.memory);
+    this.semantic = new SemanticMemory(this.memory);
+    this.brain.semantic = this.semantic;
     this.msgCmd = {};   // id de mensaje -> comando (para feedback)
     this.busy = false;
   }
@@ -58,6 +61,13 @@ class App {
       }).then(() => this.ui.setBrandSub('IA local activa 🧠'))
         .catch(() => this.ui.setBrandSub('IA local disponible'));
     }
+
+    // Memoria semántica: indexa cambios al vuelo y reactívala si ya se activó
+    this.memory.onchange = (op, item) => {
+      if (op === 'put') this.semantic.enqueue(item);
+      else if (op === 'delete' && item && item.id) this.semantic.remove(item.id);
+    };
+    if (await this.memory.getPref('semanticOn', false)) this._startSemantic(false);
 
     this._wireVoice();
     this._wireUI();
@@ -221,6 +231,21 @@ class App {
       </div>
 
       <div class="card">
+        <h3>📚 Aprendizaje y memoria</h3>
+        <label class="lbl">Tono del asistente</label>
+        <div class="inrow">
+          <input class="field" id="setTono" value="${(prefs.tono || 'amable y directo')}">
+          <button class="btn" id="saveTono">Guardar</button>
+        </div>
+        <div class="muted" id="learnStats" style="margin-top:8px">…</div>
+        <label class="lbl" style="margin-top:10px">Búsqueda semántica (RAG local)</label>
+        <div class="muted">Encuentra tus cosas por significado: "¿qué anoté sobre el proveedor?". Todo en tu dispositivo.</div>
+        <button class="btn block" id="semBtn" style="margin-top:8px">🔎 Activar búsqueda semántica</button>
+        <div class="muted" id="semStatus" style="margin-top:6px"></div>
+        <button class="btn ghost block" id="resetStats" style="margin-top:10px">♻️ Olvidar estadísticas de uso</button>
+      </div>
+
+      <div class="card">
         <h3>🎙️ Reconocimiento de voz (STT)</h3>
         <label class="lbl">Motor</label>
         <select class="field" id="setStt">
@@ -268,9 +293,14 @@ class App {
       <div class="card">
         <h3>💾 Datos</h3>
         <div class="muted">Todo se guarda en tu dispositivo (IndexedDB). Nada sale de tu teléfono.</div>
+        <div class="inrow" style="margin-top:10px">
+          <button class="btn ghost" id="exportData" style="flex:1">⬇️ Exportar copia</button>
+          <button class="btn ghost" id="importData" style="flex:1">⬆️ Importar copia</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">🗑️ Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.2.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.3.0</div>
     `;
     this._wireSettings();
   }
@@ -327,6 +357,62 @@ class App {
     });
     this._updatePvStatus();
 
+    const tonoBtn = g('saveTono');
+    tonoBtn && tonoBtn.addEventListener('click', async () => {
+      await this.memory.setPref('tono', g('setTono').value.trim() || 'amable y directo');
+      this.ui.toast('✅', 'Tono guardado. Se aplica en la próxima respuesta.');
+    });
+
+    const semBtn = g('semBtn');
+    semBtn && semBtn.addEventListener('click', async () => {
+      semBtn.disabled = true;
+      if (this.semantic.ready) {
+        const n = await this.semantic.reindexAll();
+        this.ui.toast('🔎', n ? `Reindexando ${n} elementos…` : 'El índice ya está al día');
+      } else {
+        await this._startSemantic(true);
+      }
+      semBtn.disabled = false;
+      this._updateLearnPanel();
+    });
+
+    const rst = g('resetStats');
+    rst && rst.addEventListener('click', async () => {
+      await this.memory.clearStats();
+      this._updateLearnPanel();
+      this.ui.toast('♻️', 'Estadísticas olvidadas. Empiezo a aprender de cero.');
+    });
+
+    const exp = g('exportData');
+    exp && exp.addEventListener('click', async () => {
+      const data = await this.memory.exportAll();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'asistente-memoria-' + new Date().toISOString().slice(0, 10) + '.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      this.ui.toast('💾', 'Copia de tu memoria descargada');
+    });
+
+    const impBtn = g('importData');
+    const impFile = g('importFile');
+    impBtn && impBtn.addEventListener('click', () => impFile.click());
+    impFile && impFile.addEventListener('change', async () => {
+      const f = impFile.files[0];
+      if (!f) return;
+      try {
+        const data = JSON.parse(await f.text());
+        const r = await this.memory.importAll(data);
+        this.ui.renderPanel();
+        this.ui.toast('✅', `Importados ${r.items} elementos y ${r.messages} mensajes`);
+      } catch (e) {
+        this.ui.toast('⚠️', 'No se pudo importar: ' + (e.message || e));
+      }
+      impFile.value = '';
+    });
+    this._updateLearnPanel();
+
     g('askNotif').addEventListener('click', () => {
       if ('Notification' in window) Notification.requestPermission().then((p) => this.ui.toast('🔔', 'Notificaciones: ' + p));
     });
@@ -361,6 +447,40 @@ class App {
         load.disabled = false; load.textContent = '⬇️ Descargar y activar modelo';
       }
     });
+  }
+
+  /* Activa el motor de embeddings (descarga única ~110 MB) e indexa lo pendiente */
+  async _startSemantic(interactive) {
+    try {
+      const ok = await this.semantic.init((p) => {
+        if (interactive) this.ui.setBrandSub(`Descargando memoria semántica… ${Math.round(p.progress || 0)}%`);
+      });
+      if (!ok) return; // ya hay una carga en curso
+      await this.memory.setPref('semanticOn', true);
+      const n = await this.semantic.reindexAll();
+      if (interactive) {
+        this.ui.setBrandSub('Memoria semántica activa 🔎');
+        this.ui.toast('🔎', n ? `Búsqueda semántica activa; indexando ${n} elementos…` : 'Búsqueda semántica activa');
+      }
+    } catch (e) {
+      if (interactive) this.ui.toast('⚠️', 'No se pudo activar la búsqueda semántica: ' + (e.message || e));
+    }
+  }
+
+  /* Refresca la card de Aprendizaje en Ajustes */
+  async _updateLearnPanel() {
+    const body = this.ui.el.settingsBody;
+    const stats = body.querySelector('#learnStats');
+    if (!stats) return;
+    const top = await this.memory.topCommands(5);
+    stats.innerHTML = top.length
+      ? 'Comandos más usados: ' + top.map((c) => `<b>${c.cmd}</b> ×${c.count}${c.down ? ' 👎' + c.down : ''}`).join(' · ')
+      : 'Aún no hay estadísticas de uso.';
+    const btn = body.querySelector('#semBtn');
+    const st = body.querySelector('#semStatus');
+    const on = await this.memory.getPref('semanticOn', false);
+    if (btn) btn.textContent = this.semantic.ready ? '🔄 Reindexar ahora' : (on ? '🔎 Cargar memoria semántica' : '🔎 Activar búsqueda semántica (~110 MB, una vez)');
+    if (st) st.textContent = this.semantic.ready ? `Índice: ${await this.semantic.count()} elementos.` : (on ? 'Activada: se carga al iniciar la app.' : 'Desactivada.');
   }
 
   /* Estado de Porcupine en Ajustes: indica qué falta para el modo neuronal */

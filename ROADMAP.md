@@ -7,7 +7,8 @@ Marca cada casilla `[ ]` → `[x]` conforme avances.
 > **Estado — 28 jul 2026:**
 > · **Fase 0** ✅ COMPLETA: repo en https://github.com/moisesmt777/asistente-voz-pwa, app en https://moisesmt777.github.io/asistente-voz-pwa/, instalada y probada en el teléfono (POCO X8 Pro Max).
 > · **Fase 1** ✅ COMPLETA: Qwen3 1.7B corriendo en el dispositivo, confirmado.
-> · **Fase 2A** 🔧 código integrado (Porcupine 4.0.1 + fallback automático a escucha continua) — faltan tus pasos de Picovoice: pegar la AccessKey en Ajustes y entrenar la keyword `asistente` (`.ppn` → `assets/porcupine/`).
+> · **Fase 2A** ⏸️ código integrado y EN ESPERA: Picovoice exige correo de empresa para crear la cuenta. Cuando lo tengas: AccessKey en Ajustes + entrenar keyword `asistente` (`.ppn` → `assets/porcupine/`). Mientras, funciona la escucha continua.
+> · **Fase 3** ✅ implementada en código (RAG local con multilingual‑e5‑small, panel de Aprendizaje, exportar/importar) — pendiente de probar en tu teléfono.
 
 ---
 
@@ -88,11 +89,12 @@ Para dictados largos o entornos ruidosos, más exacto que la Web Speech API.
 
 **Objetivo:** que el asistente recuerde, personalice y "aprenda" de tu uso — el corazón de tu idea original.
 
-- [ ] Reforzar el **prompting adaptativo** ya existente: inyectar tus preferencias, tus comandos más usados y tu contexto (tareas/eventos) en cada respuesta.
-- [ ] Añadir **búsqueda semántica local (RAG)** sobre tus notas: generar *embeddings* con Transformers.js (modelo multilingüe pequeño, p. ej. `multilingual-e5-small`) y guardarlos en IndexedDB, para que responda "¿qué anoté sobre el proveedor?" buscando por significado.
-- [ ] Guardar blobs grandes (audios, modelos) en **OPFS** en vez de IndexedDB.
-- [ ] Panel de "Aprendizaje": ver y editar lo que el asistente ha memorizado sobre ti (transparencia y control).
-- [ ] Exportar/importar tu memoria (respaldo cifrado opcional).
+- [x] Reforzar el **prompting adaptativo** ya existente: inyectar tus preferencias, tus comandos más usados y tu contexto (tareas/eventos) en cada respuesta. *(Hecho: además, los recuerdos recuperados por significado se inyectan al system prompt y el tono del asistente es editable en Ajustes → Aprendizaje.)*
+- [x] Añadir **búsqueda semántica local (RAG)** sobre tus notas: generar *embeddings* con Transformers.js (modelo multilingüe pequeño, p. ej. `multilingual-e5-small`) y guardarlos en IndexedDB, para que responda "¿qué anoté sobre el proveedor?" buscando por significado. *(Hecho: `Xenova/multilingual-e5-small` cuantizado ~110 MB —descarga única activable en Ajustes—; prefijos query/passage, similitud coseno; indexa notas, tareas, eventos y alarmas al vuelo. Sin LLM también responde "¿qué anoté sobre…?" directamente con los recuerdos.)*
+- [x] Guardar blobs grandes (audios, modelos) en **OPFS** en vez de IndexedDB. *(N/A por ahora: la app no persiste blobs propios — los modelos los cachean el navegador y las librerías, y los audios no se guardan. Se retomará si Kokoro/Whisper locales lo necesitan.)*
+- [x] Panel de "Aprendizaje": ver y editar lo que el asistente ha memorizado sobre ti (transparencia y control). *(Card en Ajustes: tono, comandos más usados con su feedback, estado del índice semántico con reindexado y "olvidar estadísticas".)*
+- [x] Exportar/importar tu memoria (respaldo cifrado opcional). *(JSON con ítems, historial, preferencias y estadísticas; los vectores se regeneran reindexando tras importar. Cifrado: pendiente como opcional.)*
+- [ ] Probar en tu teléfono: activar la búsqueda semántica en Ajustes → Aprendizaje, crear un par de notas y preguntar "¿qué anoté sobre…?".
 
 **Listo cuando:** notas que responde cada vez más "a tu medida" y puede recuperar información pasada por significado, no solo por palabra exacta.
 

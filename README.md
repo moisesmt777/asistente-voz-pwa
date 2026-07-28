@@ -15,6 +15,7 @@ Asistente virtual **controlado por voz**, empaquetado como **PWA instalable en A
 - **IA local:** LLM en el dispositivo con **WebLLM** sobre **WebGPU** (modelos pequeños: Qwen3/3.5, Gemma 3, Llama 3.2, Phi-4 mini; por defecto **Qwen3 1.7B**). **Cerebro de reglas de respaldo** cuando no hay WebGPU.
 - **Memoria persistente:** notas, tareas, eventos, alarmas, historial y preferencias en **IndexedDB**.
 - **Auto-mejora:** *few-shot prompting* dinámico que se adapta a los comandos más usados y al feedback (👍/👎).
+- **Búsqueda semántica local (RAG):** embeddings multilingües en el dispositivo (Transformers.js + IndexedDB) para encontrar tus notas por significado; los recuerdos relevantes se inyectan al LLM. Panel de "Aprendizaje" y exportar/importar tu memoria.
 - **Skills:** notas, tareas (con prioridad), agenda/eventos y alarmas — por voz o toque.
 - **PWA nativa:** `manifest.json` completo con iconos, tema, accesos directos y modo pantalla completa.
 
@@ -166,6 +167,7 @@ git push -u origin main
 - **Modelo de IA:** elige y descarga un modelo pequeño (según tu hardware).
 - **Voz TTS:** selecciona la voz local en español.
 - **Palabra de activación:** personalízala (por defecto «asistente»).
+- **Aprendizaje:** tono del asistente, comandos más usados, búsqueda semántica (activar/reindexar) y copia de seguridad (exportar/importar).
 - **Notificaciones** y **borrado de datos**.
 
 ---
