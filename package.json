@@ -1,6 +1,6 @@
 {
   "name": "asistente-voz-pwa",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Asistente virtual controlado por voz, offline-first, con IA en el dispositivo (WebGPU/WebLLM) empaquetado como PWA instalable en Android.",
   "type": "module",
   "scripts": {

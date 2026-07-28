@@ -22,6 +22,8 @@ export class VoiceEngine {
       sttEngine: 'webspeech',              // 'webspeech' | 'whisper'
       whisperModel: 'Xenova/whisper-tiny', // modelo ligero por defecto
       wakeWord: 'asistente',
+      wakeEngine: 'auto',                  // 'auto' | 'porcupine' | 'webspeech'
+      pvAccessKey: null,                   // AccessKey de Picovoice (solo vive en el dispositivo)
       rate: 1.03,
       pitch: 1.0,
       vadSilenceMs: 900,                   // silencio para autocorte
@@ -37,6 +39,8 @@ export class VoiceEngine {
     this._asr = null;          // pipeline Whisper (perezoso)
     this._recognition = null;  // instancia Web Speech (por sesión)
     this._wake = null;         // instancia Web Speech para wake word
+    this._porc = null;         // instancia Porcupine (wake word neuronal)
+    this.wakeMode = null;      // 'porcupine' | 'webspeech' | null
   }
 
   /* -------- Event emitter mínimo -------- */
@@ -66,6 +70,7 @@ export class VoiceEngine {
      ============================================================ */
   async startListening() {
     if (this.listening) return;
+    if (this._porc) this._porc.pause(); // liberar el micrófono para el STT
     this.listening = true;
     if (this.opts.sttEngine === 'whisper') {
       return this._listenWhisper();
@@ -107,8 +112,9 @@ export class VoiceEngine {
     rec.onerror = (e) => {
       this.listening = false;
       this.emit('error', { type: e.error, message: this._sttErrorMsg(e.error) });
+      this._porcMaybeResume();
     };
-    rec.onend = () => { this.listening = false; this.emit('end'); };
+    rec.onend = () => { this.listening = false; this.emit('end'); this._porcMaybeResume(); };
 
     try { rec.start(); }
     catch (e) { this.listening = false; this.emit('error', { type: 'start-failed', message: String(e) }); }
@@ -154,6 +160,7 @@ export class VoiceEngine {
     } catch (e) {
       this.listening = false;
       this.emit('error', { type: 'record', message: 'No se pudo grabar audio: ' + e.message });
+      this._porcMaybeResume();
       return;
     }
     this.emit('end');
@@ -166,9 +173,11 @@ export class VoiceEngine {
       this.listening = false;
       if (text) this.emit('final', text);
       else this.emit('error', { type: 'empty', message: 'No se entendió el audio.' });
+      this._porcMaybeResume();
     } catch (e) {
       this.listening = false;
       this.emit('error', { type: 'whisper', message: 'Fallo en Whisper: ' + e.message });
+      this._porcMaybeResume();
     }
   }
 
@@ -248,13 +257,66 @@ export class VoiceEngine {
   }
 
   /* ============================================================
-     Wake Word — palabra de activación (escucha continua)
-     Nota: usa Web Speech en modo continuo. En Android consume batería
-     de forma moderada; se recomienda activarla solo con pantalla encendida.
+     Wake Word — palabra de activación
+       · Porcupine (neuronal, WASM): eficiente en batería. Requiere
+         AccessKey de Picovoice y assets/porcupine/asistente_es_wasm.ppn.
+       · Web Speech continuo (respaldo): consume batería moderada;
+         mejor con la pantalla encendida.
      ============================================================ */
   enableWakeWord() {
-    if (!SR) { this.emit('error', { type: 'no-stt', message: 'Wake word requiere Web Speech API.' }); return false; }
     if (this._wakeOn) return true;
+    this._wakeOn = true;
+    const eng = this.opts.wakeEngine || 'auto';
+    if ((eng === 'porcupine' || eng === 'auto') && this.opts.pvAccessKey) {
+      this._startPorcupine(); // asíncrono: emite 'wakestate' cuando está listo
+      return true;
+    }
+    return this._enableWakeWebSpeech();
+  }
+
+  /* Porcupine con retroceso automático a Web Speech si algo falta o falla */
+  async _startPorcupine() {
+    try {
+      const { PorcupineWake } = await import('./wake-porcupine.js');
+      if (!(await PorcupineWake.keywordAvailable()))
+        throw new Error('falta assets/porcupine/asistente_es_wasm.ppn');
+      const porc = new PorcupineWake({
+        accessKey: this.opts.pvAccessKey,
+        label: this.opts.wakeWord,
+        onWake: () => { if (this._wakeOn) { porc.pause(); this.emit('wake'); } },
+        onError: (e) => { if (this._wakeOn && this.wakeMode === 'porcupine') this._porcFallback(e); }
+      });
+      await porc.start();
+      if (!this._wakeOn) { porc.stop(); return; } // lo desactivaron durante la carga
+      this._porc = porc;
+      this.wakeMode = 'porcupine';
+      this.emit('wakestate', true);
+    } catch (e) {
+      this._porcFallback(e);
+    }
+  }
+
+  _porcFallback(e) {
+    if (this._porc) { const p = this._porc; this._porc = null; p.stop(); }
+    if (!this._wakeOn) return;
+    if ((this.opts.wakeEngine || 'auto') === 'auto' && SR) {
+      this.emit('wakeinfo', 'Porcupine no disponible (' + (e && e.message ? e.message : e) + '). Uso escucha continua.');
+      this._enableWakeWebSpeech();
+    } else {
+      this._wakeOn = false;
+      this.wakeMode = null;
+      this.emit('wakestate', false);
+      this.emit('error', { type: 'porcupine', message: 'Wake word Porcupine falló: ' + (e && e.message ? e.message : e) });
+    }
+  }
+
+  /* Respaldo: escucha continua con Web Speech */
+  _enableWakeWebSpeech() {
+    if (!SR) {
+      this._wakeOn = false;
+      this.emit('error', { type: 'no-stt', message: 'Wake word requiere Web Speech API.' });
+      return false;
+    }
     const w = new SR();
     this._wake = w;
     w.lang = this.opts.lang;
@@ -272,7 +334,7 @@ export class VoiceEngine {
       if (this._wakeOn && e.error !== 'not-allowed') this._restartWake();
     };
     w.onend = () => { if (this._wakeOn) this._restartWake(); };
-    this._wakeOn = true;
+    this.wakeMode = 'webspeech';
     try { w.start(); this.emit('wakestate', true); } catch (e) {}
     return true;
   }
@@ -288,6 +350,8 @@ export class VoiceEngine {
     this._wakeOn = false;
     clearTimeout(this._wakeTimer);
     if (this._wake) { try { this._wake.stop(); } catch (e) {} }
+    if (this._porc) { const p = this._porc; this._porc = null; p.stop(); }
+    this.wakeMode = null;
     this.emit('wakestate', false);
   }
 
@@ -337,9 +401,9 @@ export class VoiceEngine {
       u.rate = this.opts.rate;
       u.pitch = this.opts.pitch;
       if (this._voice) u.voice = this._voice;
-      u.onstart = () => { this.speaking = true; this.emit('ttsstart'); };
-      u.onend = () => { this.speaking = false; this.emit('ttsend'); resolve(); };
-      u.onerror = () => { this.speaking = false; this.emit('ttsend'); resolve(); };
+      u.onstart = () => { this.speaking = true; if (this._porc) this._porc.pause(); this.emit('ttsstart'); };
+      u.onend = () => { this.speaking = false; this.emit('ttsend'); this._porcMaybeResume(); resolve(); };
+      u.onerror = () => { this.speaking = false; this.emit('ttsend'); this._porcMaybeResume(); resolve(); };
       speechSynthesis.speak(u);
     });
   }
@@ -351,9 +415,16 @@ export class VoiceEngine {
     this.speaking = false;
   }
 
+  /* Reanuda Porcupine solo cuando el asistente vuelve a estar ocioso */
+  _porcMaybeResume() {
+    if (this._porc && this._wakeOn && !this.listening && !this.speaking) this._porc.resume();
+  }
+
   /* -------- Configuración en caliente -------- */
   setSttEngine(name) { this.opts.sttEngine = name; }
   setWakeWord(word) { this.opts.wakeWord = (word || 'asistente').toLowerCase(); }
+  setWakeEngine(name) { this.opts.wakeEngine = name || 'auto'; }
+  setPvAccessKey(key) { this.opts.pvAccessKey = (key || '').trim() || null; }
   setLang(lang) { this.opts.lang = lang; }
 }
 

@@ -38,6 +38,8 @@ class App {
     const savedVoice = await this.memory.getPref('ttsVoice', null);
     this.voice.setSttEngine(savedStt);
     this.voice.setWakeWord(savedWake);
+    this.voice.setWakeEngine(await this.memory.getPref('wakeEngine', 'auto'));
+    this.voice.setPvAccessKey(await this.memory.getPref('pvAccessKey', null));
 
     const caps = await this.voice.init();
     if (savedVoice) this.voice.setVoice(savedVoice);
@@ -88,6 +90,7 @@ class App {
       .on('ttsend', () => this.ui.setState('idle'))
       .on('modelprogress', (p) => this.ui.setBrandSub(`Cargando Whisper… ${Math.round((p.progress || 0))}%`))
       .on('wake', () => { this.ui.toast('👂', '¡Te escucho!'); this.startListening(); })
+      .on('wakeinfo', (m) => this.ui.toast('👂', m, 4500))
       .on('wakestate', (on) => { const b = $('#btnWake'); b && b.classList.toggle('on', on); });
   }
 
@@ -242,7 +245,18 @@ class App {
           <input class="field" id="setWake" value="${(prefs.wakeWord || 'asistente')}">
           <button class="btn" id="saveWake">Guardar</button>
         </div>
-        <div class="muted" style="margin-top:6px">Escucha continua; úsala con la pantalla encendida para cuidar la batería.</div>
+        <label class="lbl">Motor</label>
+        <select class="field" id="setWakeEngine">
+          <option value="auto" ${(prefs.wakeEngine || 'auto') === 'auto' ? 'selected' : ''}>Auto — Porcupine si está configurado</option>
+          <option value="porcupine" ${prefs.wakeEngine === 'porcupine' ? 'selected' : ''}>Porcupine (neuronal, ahorra batería)</option>
+          <option value="webspeech" ${prefs.wakeEngine === 'webspeech' ? 'selected' : ''}>Escucha continua (Web Speech)</option>
+        </select>
+        <label class="lbl">AccessKey de Picovoice</label>
+        <div class="inrow">
+          <input class="field" id="setPvKey" type="password" autocomplete="off" placeholder="${prefs.pvAccessKey ? '••••••••  (guardada)' : 'Pega aquí tu AccessKey (gratis)'}">
+          <button class="btn" id="savePvKey">Guardar</button>
+        </div>
+        <div class="muted" id="pvStatus" style="margin-top:6px">Comprobando Porcupine…</div>
       </div>
 
       <div class="card">
@@ -256,7 +270,7 @@ class App {
         <div class="muted">Todo se guarda en tu dispositivo (IndexedDB). Nada sale de tu teléfono.</div>
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">🗑️ Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.1.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.2.0</div>
     `;
     this._wireSettings();
   }
@@ -292,6 +306,27 @@ class App {
       this.ui.toast('👂', 'Palabra de activación: ' + w);
     });
 
+    const eng = g('setWakeEngine');
+    eng && eng.addEventListener('change', async () => {
+      await this.memory.setPref('wakeEngine', eng.value);
+      this.voice.setWakeEngine(eng.value);
+      if (this.voice.isWakeWordOn()) { this.voice.disableWakeWord(); this.voice.enableWakeWord(); }
+      this.ui.toast('👂', 'Motor de wake word: ' + eng.options[eng.selectedIndex].text);
+    });
+
+    const pvBtn = g('savePvKey');
+    pvBtn && pvBtn.addEventListener('click', async () => {
+      const k = g('setPvKey').value.trim();
+      if (!k) { this.ui.toast('👂', 'Pega tu AccessKey de Picovoice primero'); return; }
+      await this.memory.setPref('pvAccessKey', k);
+      this.voice.setPvAccessKey(k);
+      g('setPvKey').value = '';
+      g('setPvKey').placeholder = '••••••••  (guardada)';
+      this._updatePvStatus();
+      this.ui.toast('✅', 'AccessKey guardada (solo en este dispositivo)');
+    });
+    this._updatePvStatus();
+
     g('askNotif').addEventListener('click', () => {
       if ('Notification' in window) Notification.requestPermission().then((p) => this.ui.toast('🔔', 'Notificaciones: ' + p));
     });
@@ -326,6 +361,22 @@ class App {
         load.disabled = false; load.textContent = '⬇️ Descargar y activar modelo';
       }
     });
+  }
+
+  /* Estado de Porcupine en Ajustes: indica qué falta para el modo neuronal */
+  async _updatePvStatus() {
+    const el = this.ui.el.settingsBody.querySelector('#pvStatus');
+    if (!el) return;
+    const key = await this.memory.getPref('pvAccessKey', null);
+    let ppn = false;
+    try {
+      const { PorcupineWake } = await import('./wake-porcupine.js');
+      ppn = await PorcupineWake.keywordAvailable();
+    } catch (e) {}
+    if (key && ppn) el.innerHTML = '✅ Porcupine listo: activa el wake word y di <b>«asistente»</b>.';
+    else if (!key && !ppn) el.textContent = 'Sin configurar: se usa la escucha continua (mejor con pantalla encendida). Para el modo eficiente faltan la AccessKey y el archivo .ppn (ver assets/porcupine/README.md).';
+    else if (!key) el.textContent = 'El archivo .ppn ya está ✓. Falta pegar tu AccessKey de Picovoice (console.picovoice.ai, gratis).';
+    else el.textContent = 'AccessKey guardada ✓. Falta el archivo assets/porcupine/asistente_es_wasm.ppn (se entrena gratis en Picovoice Console; ver README de esa carpeta).';
   }
 
   /* ============================================================

@@ -5,8 +5,9 @@ Guía por fases para llevar tu asistente desde la base que ya construimos hasta 
 Marca cada casilla `[ ]` → `[x]` conforme avances.
 
 > **Estado — 28 jul 2026:**
-> · **Fase 0** ✅ publicada: repo en https://github.com/moisesmt777/asistente-voz-pwa y app en https://moisesmt777.github.io/asistente-voz-pwa/ — solo falta instalarla en tu Android.
-> · **Fase 1** ✅ implementada en código (Qwen3 1.7B por defecto, más modelos, autocarga del modelo al arrancar) — pendiente de probarla en tu teléfono.
+> · **Fase 0** ✅ COMPLETA: repo en https://github.com/moisesmt777/asistente-voz-pwa, app en https://moisesmt777.github.io/asistente-voz-pwa/, instalada y probada en el teléfono (POCO X8 Pro Max).
+> · **Fase 1** ✅ COMPLETA: Qwen3 1.7B corriendo en el dispositivo, confirmado.
+> · **Fase 2A** 🔧 código integrado (Porcupine 4.0.1 + fallback automático a escucha continua) — faltan tus pasos de Picovoice: pegar la AccessKey en Ajustes y entrenar la keyword `asistente` (`.ppn` → `assets/porcupine/`).
 
 ---
 
@@ -27,9 +28,9 @@ Tu repositorio `asistente-voz-pwa` ya usa la vía más avanzada disponible: **PW
 
 - [x] Subir el repositorio a GitHub. *(Hecho el 28‑jul‑2026 → https://github.com/moisesmt777/asistente-voz-pwa)*
 - [x] Activar el despliegue. *(Hecho: Settings → Pages → Source: **Deploy from a branch** → `main` / root. Nota: se usó esta vía en lugar de GitHub Actions porque subir `deploy.yml` requiere un token con scope `workflow`; el resultado es idéntico. **No cambiar a "GitHub Actions"** sin subir antes el workflow.)*
-- [ ] Abrir la URL `https://moisesmt777.github.io/asistente-voz-pwa/` en Chrome de Android.
-- [ ] Instalarla: *⋮ → Instalar aplicación*. Conceder micrófono y notificaciones.
-- [ ] Probar en modo avión que sigue funcionando (offline‑first).
+- [x] Abrir la URL `https://moisesmt777.github.io/asistente-voz-pwa/` en Chrome de Android. *(28‑jul‑2026, POCO X8 Pro Max)*
+- [x] Instalarla: *⋮ → Instalar aplicación*. Conceder micrófono y notificaciones.
+- [x] Probar en modo avión que sigue funcionando (offline‑first).
 
 **Listo cuando:** puedes crear notas/tareas/alarmas por voz desde el ícono de tu pantalla de inicio, incluso sin internet.
 
@@ -44,7 +45,7 @@ Tu repositorio `asistente-voz-pwa` ya usa la vía más avanzada disponible: **PW
 - [x] En `ai-brain.js`, fijar el modelo por defecto a Qwen3 1.7B. *(Hecho: ID verificado `Qwen3-1.7B-q4f16_1-MLC` en WebLLM **0.2.84**; la versión de la librería quedó fijada en el import para que los IDs no se rompan con el tiempo.)*
 - [x] Añadir Gemma 3 1B y Phi‑4 Mini a la lista de modelos seleccionables en Ajustes. *(Hecho: `gemma3-1b-it-q4f16_1-MLC` —el más ligero, 0.7 GB de VRAM— y `Phi-4-mini-instruct-q4f16_1-MLC`. Bonus: Qwen3 0.6B y **Qwen3.5 2B**, última generación.)*
 - [x] Mostrar barra de progreso de descarga (ya está el gancho `initProgressCallback`). *(Ya venía cableada en Ajustes; además ahora la app **reactiva automáticamente** el último modelo usado al arrancar, con progreso en la cabecera.)*
-- [ ] Probar en tu teléfono: descargar el modelo una vez y confirmar que responde en español con la app cerrada de internet.
+- [x] Probar en tu teléfono: descargar el modelo una vez y confirmar que responde en español con la app cerrada de internet. *(Confirmado el 28‑jul‑2026 en el POCO X8 Pro Max)*
 - [x] Ajustar `temperature`/`max_tokens` para respuestas breves aptas para leer en voz alta. *(0.6 / 256; a los Qwen3 se les desactiva además el "razonamiento" `<think>` para que la voz no lo lea.)*
 
 **Listo cuando:** le puedes preguntar cosas abiertas ("resúmeme mis tareas de hoy y sugiéreme por cuál empezar") y responde con criterio, offline.
@@ -58,10 +59,11 @@ Tu repositorio `asistente-voz-pwa` ya usa la vía más avanzada disponible: **PW
 ### 2A. Palabra de activación con Porcupine (Picovoice)
 Reemplaza la "escucha continua" actual (que gasta batería) por detección neuronal eficiente.
 
-- [ ] Crear una cuenta gratuita en **Picovoice Console** y obtener un **AccessKey**.
-- [ ] Integrar `@picovoice/porcupine-web` (corre en WASM en el navegador).
-- [ ] Definir la palabra clave (p. ej. "asistente" o una personalizada) y conectar su evento a `startListening()`.
-- [ ] Sustituir el wake word basado en Web Speech por este.
+- [ ] Crear una cuenta gratuita en **Picovoice Console** y obtener un **AccessKey**. *(Tu paso: la AccessKey se pega en Ajustes → 👂 Palabra de activación y **solo se guarda en tu dispositivo**, nunca en el repo.)*
+- [x] Integrar `@picovoice/porcupine-web` (corre en WASM en el navegador). *(Hecho: `porcupine-web@4.0.1` + `web-voice-processor@4.0.10` fijados por CDN; modelo base español v3.0 ~1 MB cacheado offline por el SW; el SDK guarda modelo y keyword en IndexedDB.)*
+- [ ] Entrenar la palabra clave **"asistente"** en Console (idioma **Español**, plataforma **Web/WASM**) y guardar el archivo como `assets/porcupine/asistente_es_wasm.ppn` (instrucciones en el README de esa carpeta).
+- [x] Definir la palabra clave y conectar su evento a `startListening()`. *(Código listo: detección → pausa Porcupine → evento `wake` → escucha; se reanuda al volver a reposo, sin pelear por el micrófono con el STT ni el TTS.)*
+- [x] Sustituir el wake word basado en Web Speech por este. *(Con retroceso automático: si falta la AccessKey o el `.ppn`, se usa la escucha continua de siempre; el motor se elige en Ajustes: Auto / Porcupine / Web Speech.)*
 
 **Listo cuando:** dices tu palabra clave con la pantalla encendida y el asistente despierta, sin drenar la batería.
 
