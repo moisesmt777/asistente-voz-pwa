@@ -1,0 +1,27 @@
+# Dependencias
+node_modules/
+.pnp
+.pnp.js
+
+# Builds / temporales
+dist/
+.cache/
+*.log
+npm-debug.log*
+
+# Entorno
+.env
+.env.local
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Modelos descargados localmente (se cachean en el navegador, no en el repo)
+models/
+*.onnx
+*.bin
+*.gguf
