@@ -9,6 +9,7 @@ Marca cada casilla `[ ]` → `[x]` conforme avances.
 > · **Fase 1** ✅ COMPLETA: Qwen3 1.7B corriendo en el dispositivo, confirmado.
 > · **Fase 2A** ⏸️ código integrado y EN ESPERA: Picovoice exige correo de empresa para crear la cuenta. Cuando lo tengas: AccessKey en Ajustes + entrenar keyword `asistente` (`.ppn` → `assets/porcupine/`). Mientras, funciona la escucha continua.
 > · **Fase 3** ✅ implementada en código (RAG local con multilingual‑e5‑small, panel de Aprendizaje, exportar/importar) — pendiente de probar en tu teléfono.
+> · **Rediseño UI (v1.4.0):** pantalla principal tipo launcher (iconos de colores con contadores: Tareas, Notas, Agenda, Recordatorios, Conversación, Ajustes); el orbe se acerca al icono de lo que estés usando; la conversación vive en su propio panel; iconografía SVG profesional (sin emojis).
 
 ---
 

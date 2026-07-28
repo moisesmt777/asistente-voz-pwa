@@ -58,7 +58,7 @@ class App {
       this.brain.loadModel(savedModel, (r) => {
         const pct = Math.round((r.progress || 0) * 100);
         this.ui.setBrandSub(`Cargando IA… ${pct}%`);
-      }).then(() => this.ui.setBrandSub('IA local activa 🧠'))
+      }).then(() => this.ui.setBrandSub('IA local activa'))
         .catch(() => this.ui.setBrandSub('IA local disponible'));
     }
 
@@ -66,6 +66,7 @@ class App {
     this.memory.onchange = (op, item) => {
       if (op === 'put') this.semantic.enqueue(item);
       else if (op === 'delete' && item && item.id) this.semantic.remove(item.id);
+      this.ui.refreshTiles();
     };
     if (await this.memory.getPref('semanticOn', false)) this._startSemantic(false);
 
@@ -73,10 +74,12 @@ class App {
     this._wireUI();
     this._startAlarmLoop();
     this._handleLaunchAction();
+    this.ui.onOpenSettings = () => { this._renderSettings(); this.ui.openSheet('settings'); };
+    await this.ui.renderTiles();
     await this.ui.renderPanel('tareas');
 
     // Saludo inicial
-    this.ui.sys('Asistente listo · offline-first. Toca 🎙️ o escribe.');
+    this.ui.sys('Asistente listo. Toca el micrófono o escribe.');
     if (!caps.webSpeechSTT && savedStt === 'webspeech') {
       this.ui.toast('🎙️', 'La voz nativa requiere HTTPS. En Ajustes puedes activar Whisper.', 5000);
     }
@@ -127,6 +130,7 @@ class App {
         this.msgCmd[msg.id] = cmd.cmd;
         this.ui.addBot(cmd.reply, { mode: 'skill', id: msg.id });
 
+        if (cmd.tab) this.ui.focusTile(cmd.tab); // el orbe viaja al icono en uso
         if (cmd.action === 'open') { this.ui.openSheet('panel'); this.ui.renderPanel(cmd.tab); }
         else if (cmd.action === 'refresh') this.ui.renderPanel(cmd.tab);
 
@@ -136,6 +140,7 @@ class App {
         const res = await this.brain.chat(text);
         const msg = await this.memory.addMessage({ role: 'assistant', text: res.text, cmd: 'chat' });
         this.msgCmd[msg.id] = 'chat';
+        this.ui.focusTile('chat');
         this.ui.addBot(res.text, { mode: res.mode, id: msg.id });
         await this.voice.speak(res.text);
       }
@@ -168,13 +173,14 @@ class App {
       else { this.voice.enableWakeWord(); this.ui.toast('👂', 'Di "' + this.voice.opts.wakeWord + '" para activarme.'); }
     });
 
-    $('#btnPanel').addEventListener('click', () => { this.ui.openSheet('panel'); this.ui.renderPanel(); });
+    $('#btnChat').addEventListener('click', () => this.ui.openSheet('chat'));
     $('#btnSettings').addEventListener('click', () => { this._renderSettings(); this.ui.openSheet('settings'); });
 
     document.querySelectorAll('[data-close]').forEach((b) =>
       b.addEventListener('click', () => this.ui.closeSheet(b.dataset.close)));
     $('#panelOverlay').addEventListener('click', () => this.ui.closeSheet('panel'));
     $('#settingsOverlay').addEventListener('click', () => this.ui.closeSheet('settings'));
+    $('#chatOverlay').addEventListener('click', () => this.ui.closeSheet('chat'));
 
     document.querySelectorAll('#panelTabs .tab').forEach((b) =>
       b.addEventListener('click', () => this.ui.renderPanel(b.dataset.tab)));
@@ -217,7 +223,7 @@ class App {
       </div>
 
       <div class="card" style="margin-top:14px">
-        <h3>🧠 Motor de IA (en el dispositivo)</h3>
+        <h3>Motor de IA (en el dispositivo)</h3>
         <div class="muted">WebGPU: <b style="color:${webgpu ? 'var(--ok)' : 'var(--danger)'}">${webgpu ? 'disponible' : 'no disponible'}</b>.
         ${webgpu ? 'Puedes descargar un modelo para respuestas más inteligentes (se guarda para uso offline).' : 'Sin WebGPU se usa el cerebro de reglas, igualmente funcional para tus comandos.'}</div>
         ${webgpu ? `
@@ -225,13 +231,13 @@ class App {
         <select class="field" id="setModel">
           ${models.map((m) => `<option value="${m.id}" ${m.id === curModel ? 'selected' : ''}>${m.label} · ~${(m.mb / 1024).toFixed(1)} GB</option>`).join('')}
         </select>
-        <button class="btn block" id="loadModel" style="margin-top:10px">⬇️ Descargar y activar modelo</button>
+        <button class="btn block" id="loadModel" style="margin-top:10px">Descargar y activar modelo</button>
         <div class="progress" id="modelProg" style="display:none"><i></i></div>
         <div class="muted" id="modelMsg" style="margin-top:6px"></div>` : ''}
       </div>
 
       <div class="card">
-        <h3>📚 Aprendizaje y memoria</h3>
+        <h3>Aprendizaje y memoria</h3>
         <label class="lbl">Tono del asistente</label>
         <div class="inrow">
           <input class="field" id="setTono" value="${(prefs.tono || 'amable y directo')}">
@@ -240,13 +246,13 @@ class App {
         <div class="muted" id="learnStats" style="margin-top:8px">…</div>
         <label class="lbl" style="margin-top:10px">Búsqueda semántica (RAG local)</label>
         <div class="muted">Encuentra tus cosas por significado: "¿qué anoté sobre el proveedor?". Todo en tu dispositivo.</div>
-        <button class="btn block" id="semBtn" style="margin-top:8px">🔎 Activar búsqueda semántica</button>
+        <button class="btn block" id="semBtn" style="margin-top:8px">Activar búsqueda semántica</button>
         <div class="muted" id="semStatus" style="margin-top:6px"></div>
-        <button class="btn ghost block" id="resetStats" style="margin-top:10px">♻️ Olvidar estadísticas de uso</button>
+        <button class="btn ghost block" id="resetStats" style="margin-top:10px">Olvidar estadísticas de uso</button>
       </div>
 
       <div class="card">
-        <h3>🎙️ Reconocimiento de voz (STT)</h3>
+        <h3>Reconocimiento de voz (STT)</h3>
         <label class="lbl">Motor</label>
         <select class="field" id="setStt">
           <option value="webspeech" ${prefs.sttEngine !== 'whisper' ? 'selected' : ''}>Web Speech API (nativo, rápido)</option>
@@ -256,16 +262,16 @@ class App {
       </div>
 
       <div class="card">
-        <h3>🔊 Voz del asistente (TTS)</h3>
+        <h3>Voz del asistente (TTS)</h3>
         <label class="lbl">Voz</label>
         <select class="field" id="setVoice">
           ${voices.length ? voices.map((v) => `<option value="${v.voiceURI}" ${prefs.ttsVoice === v.voiceURI ? 'selected' : ''}>${v.name} (${v.lang})</option>`).join('') : '<option>Voces del sistema</option>'}
         </select>
-        <button class="btn ghost block" id="testVoice" style="margin-top:10px">▶ Probar voz</button>
+        <button class="btn ghost block" id="testVoice" style="margin-top:10px">Probar voz</button>
       </div>
 
       <div class="card">
-        <h3>👂 Palabra de activación</h3>
+        <h3>Palabra de activación</h3>
         <div class="inrow">
           <input class="field" id="setWake" value="${(prefs.wakeWord || 'asistente')}">
           <button class="btn" id="saveWake">Guardar</button>
@@ -285,22 +291,22 @@ class App {
       </div>
 
       <div class="card">
-        <h3>🔔 Notificaciones</h3>
+        <h3>Notificaciones</h3>
         <div class="muted">Estado: <b>${('Notification' in window) ? Notification.permission : 'no soportado'}</b></div>
         <button class="btn ghost block" id="askNotif" style="margin-top:10px">Permitir notificaciones</button>
       </div>
 
       <div class="card">
-        <h3>💾 Datos</h3>
+        <h3>Datos</h3>
         <div class="muted">Todo se guarda en tu dispositivo (IndexedDB). Nada sale de tu teléfono.</div>
         <div class="inrow" style="margin-top:10px">
-          <button class="btn ghost" id="exportData" style="flex:1">⬇️ Exportar copia</button>
-          <button class="btn ghost" id="importData" style="flex:1">⬆️ Importar copia</button>
+          <button class="btn ghost" id="exportData" style="flex:1">Exportar copia</button>
+          <button class="btn ghost" id="importData" style="flex:1">Importar copia</button>
         </div>
         <input type="file" id="importFile" accept="application/json" style="display:none">
-        <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">🗑️ Borrar todos los datos</button>
+        <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.3.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.4.0</div>
     `;
     this._wireSettings();
   }
@@ -437,14 +443,14 @@ class App {
           bar.style.width = pct + '%';
           msg.textContent = r.text || `Cargando… ${pct}%`;
         });
-        msg.textContent = '✅ Modelo activo: ' + id;
-        this.ui.setBrandSub('IA local activa 🧠');
+        msg.textContent = 'Modelo activo: ' + id;
+        this.ui.setBrandSub('IA local activa');
         this.ui.toast('🧠', 'Modelo de IA activado');
       } catch (e) {
-        msg.textContent = '⚠️ ' + e.message;
+        msg.textContent = 'Error: ' + e.message;
         this.ui.toast('⚠️', 'No se pudo cargar el modelo');
       } finally {
-        load.disabled = false; load.textContent = '⬇️ Descargar y activar modelo';
+        load.disabled = false; load.textContent = 'Descargar y activar modelo';
       }
     });
   }
@@ -459,7 +465,7 @@ class App {
       await this.memory.setPref('semanticOn', true);
       const n = await this.semantic.reindexAll();
       if (interactive) {
-        this.ui.setBrandSub('Memoria semántica activa 🔎');
+        this.ui.setBrandSub('Memoria semántica activa');
         this.ui.toast('🔎', n ? `Búsqueda semántica activa; indexando ${n} elementos…` : 'Búsqueda semántica activa');
       }
     } catch (e) {
@@ -479,7 +485,7 @@ class App {
     const btn = body.querySelector('#semBtn');
     const st = body.querySelector('#semStatus');
     const on = await this.memory.getPref('semanticOn', false);
-    if (btn) btn.textContent = this.semantic.ready ? '🔄 Reindexar ahora' : (on ? '🔎 Cargar memoria semántica' : '🔎 Activar búsqueda semántica (~110 MB, una vez)');
+    if (btn) btn.textContent = this.semantic.ready ? 'Reindexar ahora' : (on ? 'Cargar memoria semántica' : 'Activar búsqueda semántica (~110 MB, una vez)');
     if (st) st.textContent = this.semantic.ready ? `Índice: ${await this.semantic.count()} elementos.` : (on ? 'Activada: se carga al iniciar la app.' : 'Desactivada.');
   }
 
@@ -493,7 +499,7 @@ class App {
       const { PorcupineWake } = await import('./wake-porcupine.js');
       ppn = await PorcupineWake.keywordAvailable();
     } catch (e) {}
-    if (key && ppn) el.innerHTML = '✅ Porcupine listo: activa el wake word y di <b>«asistente»</b>.';
+    if (key && ppn) el.innerHTML = 'Porcupine listo: activa el wake word y di <b>«asistente»</b>.';
     else if (!key && !ppn) el.textContent = 'Sin configurar: se usa la escucha continua (mejor con pantalla encendida). Para el modo eficiente faltan la AccessKey y el archivo .ppn (ver assets/porcupine/README.md).';
     else if (!key) el.textContent = 'El archivo .ppn ya está ✓. Falta pegar tu AccessKey de Picovoice (console.picovoice.ai, gratis).';
     else el.textContent = 'AccessKey guardada ✓. Falta el archivo assets/porcupine/asistente_es_wasm.ppn (se entrena gratis en Picovoice Console; ver README de esa carpeta).';
@@ -523,7 +529,7 @@ class App {
       try { new Notification('⏰ ' + a.texto, { body: cuando(a.ts), icon: 'assets/icons/icon-192.png' }); } catch (e) {}
     }
     this.ui.toast('⏰', `<b>${a.texto}</b>`, 6000);
-    this.ui.addBot(`⏰ Recordatorio: ${a.texto}`, { mode: 'skill' });
+    this.ui.addBot(`Recordatorio: ${a.texto}`, { mode: 'skill' });
     this.voice.speak('Recordatorio: ' + a.texto);
     this._beep();
   }

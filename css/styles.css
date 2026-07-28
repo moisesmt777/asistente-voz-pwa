@@ -80,10 +80,9 @@ body[data-state="error"]     { --state: #ff5a6a; }
 }
 .chip.online { color: var(--ok); border-color: rgba(55, 214, 122, .35); }
 
-/* ====== Conversación ====== */
+/* ====== Conversación (vive en su propio sheet) ====== */
 #conversation {
-  flex: 1; overflow-y: auto; padding: 8px 16px 6px;
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: 10px; min-height: 220px;
 }
 #conversation::-webkit-scrollbar { width: 0; }
 .bubble {
@@ -222,6 +221,67 @@ label.lbl { font-size: 12px; color: var(--txt-dim); display: block; margin: 12px
 .muted { font-size: 12.5px; color: var(--txt-dim); line-height: 1.5; }
 .progress { height: 8px; border-radius: 8px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 8px; }
 .progress > i { display: block; height: 100%; width: 0; background: var(--accent-grad); transition: width .3s; }
+
+/* ====== Home: cuadrícula de iconos (estilo launcher) ====== */
+#home { flex: 1; overflow-y: auto; padding: 14px 18px 6px; }
+#home::-webkit-scrollbar { width: 0; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 10px; max-width: 420px; margin: 0 auto; }
+.tile {
+  position: relative; border: none; cursor: pointer; background: none; padding: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  color: var(--txt); font-family: inherit;
+}
+.tile .ic {
+  width: 64px; height: 64px; border-radius: 19px; display: grid; place-items: center;
+  color: #fff; position: relative;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .35);
+  transition: transform .15s, box-shadow .35s;
+}
+.tile .ic svg { width: 28px; height: 28px; }
+.tile:active .ic { transform: scale(.92); }
+.tile .lb { font-size: 11.5px; color: var(--txt-dim); font-weight: 600; }
+.tile .badge {
+  position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; border-radius: 10px;
+  background: var(--danger); color: #fff; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center; padding: 0 5px; border: 2px solid var(--bg);
+}
+.tile.focus .ic {
+  box-shadow: 0 0 0 3px var(--state), 0 0 34px var(--state);
+  animation: tilepulse 1.1s ease-in-out 2;
+}
+@keyframes tilepulse { 50% { transform: scale(1.09); } }
+/* Gradientes de los iconos */
+.g-green  { background: linear-gradient(145deg, #34d399, #0e9f6e); }
+.g-orange { background: linear-gradient(145deg, #fbbf24, #f0590d); }
+.g-blue   { background: linear-gradient(145deg, #38bdf8, #1d4ed8); }
+.g-pink   { background: linear-gradient(145deg, #f472b6, #db2777); }
+.g-purple { background: linear-gradient(145deg, #a78bfa, #6d28d9); }
+.g-slate  { background: linear-gradient(145deg, #94a3b8, #475569); }
+
+/* El orbe viaja hacia el icono en uso */
+#orb { transition: transform .6s cubic-bezier(.4, 0, .2, 1); z-index: 5; }
+#orb.focusing { transform: translate(var(--fx, 0px), var(--fy, 0px)) scale(.5); }
+
+/* Última respuesta del asistente (tarjeta flotante sobre el orbe) */
+.reply-card {
+  max-width: 92%; background: var(--panel); backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur); border: 1px solid var(--stroke);
+  border-radius: 16px; padding: 11px 14px; font-size: 14px; line-height: 1.45;
+  margin-bottom: 10px; word-break: break-word; animation: rise .28s ease both;
+}
+.reply-card[hidden] { display: none; }
+
+/* Iconos SVG: tamaños por contexto */
+.brand .logo svg { width: 21px; height: 21px; }
+.icon-btn svg { width: 19px; height: 19px; }
+.mic-btn svg { width: 28px; height: 28px; }
+.pill-btn svg { width: 14px; height: 14px; }
+.tab { display: inline-flex; align-items: center; gap: 6px; }
+.tab svg { width: 14px; height: 14px; }
+.del svg { width: 17px; height: 17px; }
+.fb button svg { width: 14px; height: 14px; display: block; }
+.toast .ti { display: grid; place-items: center; color: var(--txt-dim); }
+.toast .ti svg { width: 18px; height: 18px; }
 
 /* Toasts */
 #toasts { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 0; right: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
