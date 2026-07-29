@@ -18,6 +18,7 @@ Asistente virtual **controlado por voz**, empaquetado como **PWA instalable en A
 - **Búsqueda semántica local (RAG):** embeddings multilingües en el dispositivo (Transformers.js + IndexedDB) para encontrar tus notas por significado; los recuerdos relevantes se inyectan al LLM. Panel de "Aprendizaje" y exportar/importar tu memoria.
 - **Proactividad:** briefing de agenda al abrir (eventos de hoy, tareas pendientes y choques de horario) y consciencia de batería (contexto para la IA, avisos y confirmación antes de descargas grandes); tono adaptativo según la urgencia del mensaje.
 - **Agencia con deep links:** prepara llamadas, WhatsApp/SMS con el mensaje escrito, correos, rutas en Maps, música en YouTube y búsquedas — tú solo confirmas con un toque. Mini‑agenda de contactos local y Contact Picker del sistema como respaldo.
+- **Galería con memoria:** toma fotos o videos desde la app, descríbelos con tus palabras y encuéntralos después por significado («muéstrame las fotos del recibo»). Archivos en OPFS, 100 % en tu dispositivo.
 - **Skills:** notas, tareas (con prioridad), agenda/eventos y alarmas — por voz o toque.
 - **PWA nativa:** `manifest.json` completo con iconos, tema, accesos directos y modo pantalla completa.
 
@@ -162,6 +163,7 @@ git push -u origin main
 - «Abre mis tareas» · «Marca como hecha comprar pan»
 - «Recuerda que el número de mamá es +58 412 123 4567» · «Llama a mamá» · «Escríbele a mamá que llego en 10 minutos»
 - «¿Dónde queda la farmacia más cercana?» · «Pon música de salsa» · «Busca en Google el clima de mañana»
+- «Toma una foto» · «Muéstrame las fotos del recibo del proveedor»
 
 ---
 

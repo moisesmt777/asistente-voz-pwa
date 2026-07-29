@@ -255,6 +255,7 @@ label.lbl { font-size: 12px; color: var(--txt-dim); display: block; margin: 12px
 .g-pink   { background: linear-gradient(145deg, #f472b6, #db2777); }
 .g-purple { background: linear-gradient(145deg, #a78bfa, #6d28d9); }
 .g-slate  { background: linear-gradient(145deg, #94a3b8, #475569); }
+.g-teal   { background: linear-gradient(145deg, #2dd4bf, #0f766e); }
 
 /* El orbe viaja hacia el icono en uso */
 #orb { transition: transform .6s cubic-bezier(.4, 0, .2, 1); z-index: 5; }
@@ -280,6 +281,22 @@ label.lbl { font-size: 12px; color: var(--txt-dim); display: block; margin: 12px
 .fb button svg { width: 14px; height: 14px; display: block; }
 .toast .ti { display: grid; place-items: center; color: var(--txt-dim); }
 .toast .ti svg { width: 18px; height: 18px; }
+
+/* Galería de fotos y videos */
+.media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.media-tile {
+  position: relative; aspect-ratio: 1; border: 1px solid var(--stroke); border-radius: 12px;
+  overflow: hidden; background: rgba(255, 255, 255, .05); cursor: pointer; padding: 0;
+}
+.media-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.media-tile .mt-vid { display: grid; place-items: center; width: 100%; height: 100%; color: var(--txt-dim); }
+.media-tile .mt-vid svg { width: 26px; height: 26px; }
+.media-tile .mt-cap {
+  position: absolute; left: 0; right: 0; bottom: 0; font-size: 10px; padding: 4px 6px;
+  background: rgba(0, 0, 0, .55); color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;
+}
+.media-view img, .media-view video { width: 100%; border-radius: 14px; display: block; }
 
 /* Botones de acción (deep links) en respuestas */
 .act { margin-top: 9px; }

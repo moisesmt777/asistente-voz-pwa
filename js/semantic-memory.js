@@ -18,7 +18,7 @@ const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17
 const EMB_MODEL = 'Xenova/multilingual-e5-small';
 
 /* Tipos de ítem que se indexan */
-const INDEXABLE = ['nota', 'tarea', 'evento', 'alarma'];
+const INDEXABLE = ['nota', 'tarea', 'evento', 'alarma', 'media'];
 
 export class SemanticMemory {
   constructor(memory) {
@@ -37,6 +37,7 @@ export class SemanticMemory {
     const parts = [];
     if (item.titulo) parts.push(item.titulo);
     if (item.texto) parts.push(item.texto);
+    if (item.descripcion) parts.push(item.descripcion); // fotos/videos
     return parts.join('. ').trim();
   }
 

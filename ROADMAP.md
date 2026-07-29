@@ -14,6 +14,7 @@ Marca cada casilla `[ ]` → `[x]` conforme avances.
 > · **Agencia con deep links (v1.6.0):** skills de acción con botón de confirmación — llamar, WhatsApp/SMS con el mensaje ya escrito, correo, rutas y búsquedas en Maps, música en YouTube y búsqueda en Google; mini‑agenda de contactos en memoria («recuerda que el número de mamá es…») y Contact Picker del sistema como respaldo (guarda el contacto elegido para la próxima).
 > · **Voz neuronal (v1.7.0):** Fase 2C hecha con **Piper** (`vits-web`): 3 voces en español descargables en Ajustes (~63–77 MB, OPFS, 100 % offline y gratis), con la voz del sistema como respaldo automático.
 > · **Navegación a pantalla completa (v1.8.0):** Tareas/Notas/Agenda/Recordatorios, Conversación y Ajustes abren como vistas completas con transición lateral, flecha ← y soporte del botón/gesto "atrás" de Android (historial), en lugar de la ventana inferior.
+> · **Galería con memoria (v1.9.0):** cámara desde la app (foto/video); cada captura se guarda en OPFS con una descripción tuya que entra en la búsqueda semántica — «muéstrame las fotos del recibo» abre la galería filtrada. Los archivos no salen del dispositivo (en el export viajan solo descripciones y miniaturas).
 
 ---
 

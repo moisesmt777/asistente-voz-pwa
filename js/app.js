@@ -14,6 +14,7 @@ import { AIBrain, MemoryStore } from './ai-brain.js';
 import { CommandRouter, cuando, fechaCorta, normName } from './commands.js';
 import { SemanticMemory } from './semantic-memory.js';
 import { NeuralTTS, NEURAL_VOICES } from './neural-tts.js';
+import { MediaStore } from './media-store.js';
 import { UI } from './ui.js';
 
 const $ = (s) => document.querySelector(s);
@@ -29,6 +30,9 @@ class App {
     this.brain.semantic = this.semantic;
     this.neuralTts = new NeuralTTS();
     this.voice.neural = this.neuralTts;
+    this.router.semantic = this.semantic;
+    this.mediaStore = MediaStore.supported() ? new MediaStore() : null;
+    this.ui.media = this.mediaStore;
     this.msgCmd = {};   // id de mensaje -> comando (para feedback)
     this.busy = false;
     this.battery = null; // { pct, charging } — lo alimenta _startBatteryWatch
@@ -137,7 +141,12 @@ class App {
         this.ui.addBot(cmd.reply, { mode: 'skill', id: msg.id, action });
 
         if (cmd.tab) this.ui.focusTile(cmd.tab); // el orbe viaja al icono en uso
-        if (cmd.action === 'open') { this.ui.openSheet('panel'); this.ui.renderPanel(cmd.tab); }
+        if (cmd.action === 'media') {
+          this.ui.mediaFilter = cmd.mediaIds || null;
+          this.ui._mediaOpen = null;
+          this.ui.openSheet('panel');
+          this.ui.renderPanel('media');
+        } else if (cmd.action === 'open') { this.ui.openSheet('panel'); this.ui.renderPanel(cmd.tab); }
         else if (cmd.action === 'refresh') this.ui.renderPanel(cmd.tab);
 
         await this.voice.speak(cmd.reply);
@@ -314,7 +323,7 @@ class App {
         <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.8.1</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.9.0</div>
     `;
     this._wireSettings();
   }

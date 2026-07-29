@@ -31,7 +31,9 @@ export const ICON = {
   save: svg('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'),
   wave: svg('<line x1="3" y1="10" x2="3" y2="14"/><line x1="7" y1="7" x2="7" y2="17"/><line x1="11" y1="4" x2="11" y2="20"/><line x1="15" y1="7" x2="15" y2="17"/><line x1="19" y1="10" x2="19" y2="14"/>'),
   external: svg('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>'),
-  contact: svg('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>')
+  contact: svg('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
+  camera: svg('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'),
+  video: svg('<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/>')
 };
 
 /* Iconos heredados (emoji) -> icono SVG, para no tocar cada llamada a toast() */
@@ -47,6 +49,7 @@ const TILES = [
   { id: 'notas', label: 'Notas', icon: 'note', grad: 'g-orange' },
   { id: 'eventos', label: 'Agenda', icon: 'calendar', grad: 'g-blue' },
   { id: 'alarmas', label: 'Recordatorios', icon: 'bell', grad: 'g-pink' },
+  { id: 'media', label: 'Fotos', icon: 'camera', grad: 'g-teal' },
   { id: 'chat', label: 'Conversación', icon: 'chat', grad: 'g-purple' },
   { id: 'ajustes', label: 'Ajustes', icon: 'gear', grad: 'g-slate' }
 ];
@@ -77,6 +80,12 @@ export class UI {
     this.onAction = null; // acción con datos (p. ej. abrir Contact Picker)
     this.activeTab = 'tareas';
     this._view = null;    // vista abierta: 'panel' | 'chat' | 'settings' | null
+    this.media = null;         // MediaStore (OPFS), lo conecta app.js
+    this.mediaFilter = null;   // ids filtrados por una búsqueda por voz
+    this._mediaOpen = null;    // id abierto en el visor
+    this._mediaQuery = '';     // filtro del buscador de la galería
+    this._mediaPending = null; // captura recién hecha esperando descripción
+    this._urls = [];           // object URLs a liberar en cada render
 
     // El botón/gesto "atrás" del sistema navega entre vistas (Android/PWA)
     window.addEventListener('popstate', (e) => {
@@ -217,20 +226,22 @@ export class UI {
   }
 
   async _tileCounts() {
-    const [tareas, notas, eventos, alarmas] = await Promise.all(
-      ['tarea', 'nota', 'evento', 'alarma'].map((t) => this.memory.listItems(t)));
+    const [tareas, notas, eventos, alarmas, media] = await Promise.all(
+      ['tarea', 'nota', 'evento', 'alarma', 'media'].map((t) => this.memory.listItems(t)));
     const hoy = new Date().toISOString().slice(0, 10);
     return {
       tareas: tareas.filter((t) => !t.done).length,
       notas: notas.length,
       eventos: eventos.filter((e) => e.fecha >= hoy).length,
-      alarmas: alarmas.filter((a) => a.activa).length
+      alarmas: alarmas.filter((a) => a.activa).length,
+      media: media.length
     };
   }
 
   _openTile(id) {
     if (id === 'chat') { this.openSheet('chat'); return; }
     if (id === 'ajustes') { this.onOpenSettings && this.onOpenSettings(); return; }
+    if (id === 'media') { this.mediaFilter = null; this._mediaOpen = null; this._mediaQuery = ''; }
     this.openSheet('panel');
     this.renderPanel(id);
   }
@@ -293,7 +304,7 @@ export class UI {
     document.querySelectorAll('#panelTabs .tab').forEach((b) =>
       b.classList.toggle('on', b.dataset.tab === this.activeTab));
     const h = $('#panelTitle');
-    if (h) h.textContent = ({ tareas: 'Tareas', notas: 'Notas', eventos: 'Agenda', alarmas: 'Recordatorios' })[this.activeTab] || 'Mis cosas';
+    if (h) h.textContent = ({ tareas: 'Tareas', notas: 'Notas', eventos: 'Agenda', alarmas: 'Recordatorios', media: 'Fotos y videos' })[this.activeTab] || 'Mis cosas';
     const body = this.el.panelBody;
     const items = await this.memory.listItems(this._singular(this.activeTab));
 
@@ -301,11 +312,13 @@ export class UI {
     else if (this.activeTab === 'notas') body.innerHTML = this._renderNotas(items);
     else if (this.activeTab === 'eventos') body.innerHTML = this._renderEventos(items);
     else if (this.activeTab === 'alarmas') body.innerHTML = this._renderAlarmas(items);
+    else if (this.activeTab === 'media') body.innerHTML = await this._renderMedia(items);
 
     this._wirePanel();
+    if (this.activeTab === 'media') this._wireMedia();
   }
 
-  _singular(tab) { return ({ tareas: 'tarea', notas: 'nota', eventos: 'evento', alarmas: 'alarma' })[tab]; }
+  _singular(tab) { return ({ tareas: 'tarea', notas: 'nota', eventos: 'evento', alarmas: 'alarma', media: 'media' })[tab]; }
 
   _renderTareas(items) {
     const pend = items.filter((t) => !t.done).sort((a, b) => prioOrder(a.prio) - prioOrder(b.prio));
@@ -383,6 +396,140 @@ export class UI {
       </div>`).join('') : `<div class="empty">Sin recordatorios.</div>`);
   }
 
+  /* -------- Galería: fotos y videos con descripción buscable -------- */
+  async _renderMedia(items) {
+    (this._urls || []).forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} });
+    this._urls = [];
+
+    // Visor de un elemento
+    if (this._mediaOpen) {
+      const it = items.find((x) => x.id === this._mediaOpen);
+      if (it) {
+        const f = this.media ? await this.media.get(it.id) : null;
+        const url = f ? URL.createObjectURL(f) : null;
+        if (url) this._urls.push(url);
+        return `
+          <button class="btn ghost block" id="mBack" style="margin-bottom:10px">Volver a la galería</button>
+          <div class="media-view">
+            ${it.kind === 'video'
+              ? (url ? `<video src="${url}" controls playsinline></video>` : '<div class="empty">No encuentro el archivo en este dispositivo.</div>')
+              : (url ? `<img src="${url}" alt="">` : '<div class="empty">No encuentro el archivo en este dispositivo.</div>')}
+          </div>
+          <div class="muted" style="margin-top:8px">${esc(it.descripcion || 'Sin descripción')} · ${new Date(it.ts).toLocaleString('es')}</div>
+          <button class="btn ghost block" id="mDel" style="margin-top:10px;color:var(--danger)">Eliminar</button>`;
+      }
+      this._mediaOpen = null;
+    }
+
+    const pend = this._mediaPending ? `
+      <div class="card">
+        ${this._mediaPending.thumb
+          ? `<img src="${this._mediaPending.thumb}" style="width:100%;border-radius:12px;margin-bottom:8px" alt="">`
+          : '<div class="muted" style="margin-bottom:8px">Video guardado.</div>'}
+        <label class="lbl">¿De qué se trata? (así podrás pedírmela luego)</label>
+        <div class="inrow">
+          <input class="field" id="mDesc" placeholder="ej: recibo del proveedor de cajas">
+          <button class="btn" id="mSaveDesc">Guardar</button>
+        </div>
+      </div>` : '';
+    const filtro = this.mediaFilter ? `
+      <div class="inrow" style="margin-bottom:10px;align-items:center">
+        <span class="muted" style="flex:1">Resultados de tu búsqueda</span>
+        <button class="btn ghost" id="mClear" style="padding:8px 12px">Ver todo</button>
+      </div>` : '';
+    return `
+      ${pend}
+      <div class="inrow" style="margin-bottom:10px">
+        <button class="btn" id="mCam" style="flex:1">Tomar foto</button>
+        <button class="btn ghost" id="mVid" style="flex:1">Grabar video</button>
+      </div>
+      <input type="file" id="mCamIn" accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="mVidIn" accept="video/*" capture="environment" style="display:none">
+      <input class="field" id="mSearch" placeholder="Buscar por descripción…" style="margin-bottom:10px" value="${esc(this._mediaQuery)}">
+      ${filtro}
+      <div class="media-grid" id="mGrid">${this._mediaGridHtml(items)}</div>`;
+  }
+
+  _mediaGridHtml(items) {
+    let arr = items;
+    if (this.mediaFilter) arr = arr.filter((x) => this.mediaFilter.includes(x.id));
+    if (this._mediaQuery) arr = arr.filter((x) => (x.descripcion || '').toLowerCase().includes(this._mediaQuery));
+    if (!arr.length) {
+      return `<div class="empty" style="grid-column:1/-1">${this._mediaQuery || this.mediaFilter
+        ? 'Nada coincide con esa búsqueda.'
+        : 'Aún no hay fotos ni videos. Toma la primera con el botón de arriba.'}</div>`;
+    }
+    return arr.map((x) => `
+      <button class="media-tile" data-media="${x.id}" aria-label="${esc(x.descripcion || 'elemento')}">
+        ${x.kind !== 'video' && x.thumb ? `<img src="${x.thumb}" alt="">`
+          : `<span class="mt-vid">${x.kind === 'video' ? ICON.video : ICON.camera}</span>`}
+        ${x.descripcion ? `<span class="mt-cap">${esc(x.descripcion)}</span>` : ''}
+      </button>`).join('');
+  }
+
+  _wireMediaGrid() {
+    this.el.panelBody.querySelectorAll('[data-media]').forEach((b) =>
+      b.addEventListener('click', () => { this._mediaOpen = b.dataset.media; this.renderPanel('media'); }));
+  }
+
+  _wireMedia() {
+    const body = this.el.panelBody;
+    const g = (id) => body.querySelector('#' + id);
+    this._wireMediaGrid();
+
+    const camIn = g('mCamIn'), vidIn = g('mVidIn');
+    const cam = g('mCam'), vid = g('mVid');
+    cam && cam.addEventListener('click', () => camIn && camIn.click());
+    vid && vid.addEventListener('click', () => vidIn && vidIn.click());
+    const onPick = (kind) => async (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      if (!this.media) { this.toast('⚠️', 'Almacenamiento de archivos no disponible en este navegador'); return; }
+      const id = 'md_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      await this.media.save(id, f);
+      let thumb = null;
+      if (kind === 'foto') { try { thumb = await makeThumb(f); } catch (err) {} }
+      this._mediaPending = { id, kind, mime: f.type, thumb };
+      this.renderPanel('media');
+    };
+    camIn && camIn.addEventListener('change', onPick('foto'));
+    vidIn && vidIn.addEventListener('change', onPick('video'));
+
+    const saveP = g('mSaveDesc');
+    saveP && saveP.addEventListener('click', async () => {
+      const p = this._mediaPending;
+      if (!p) return;
+      const d = g('mDesc').value.trim();
+      await this.memory.putItem({ type: 'media', id: p.id, kind: p.kind, mime: p.mime, thumb: p.thumb, descripcion: d });
+      this._mediaPending = null;
+      this.renderPanel('media');
+      this.toast('✅', d ? 'Guardado; ya puedes buscarlo por su descripción' : 'Guardado sin descripción (será difícil de encontrar)');
+    });
+
+    const search = g('mSearch');
+    search && search.addEventListener('input', async () => {
+      this._mediaQuery = search.value.trim().toLowerCase();
+      const grid = g('mGrid');
+      if (grid) { grid.innerHTML = this._mediaGridHtml(await this.memory.listItems('media')); this._wireMediaGrid(); }
+    });
+
+    const clear = g('mClear');
+    clear && clear.addEventListener('click', () => { this.mediaFilter = null; this.renderPanel('media'); });
+    const back = g('mBack');
+    back && back.addEventListener('click', () => { this._mediaOpen = null; this.renderPanel('media'); });
+    const del = g('mDel');
+    del && del.addEventListener('click', async () => {
+      const id = this._mediaOpen;
+      if (!id || !confirm('¿Eliminar esta foto o video? No se puede deshacer.')) return;
+      this._mediaOpen = null;
+      await this.memory.deleteItem(id);
+      if (this.media) this.media.remove(id);
+      this.renderPanel('media');
+      this.toast('🗑️', 'Eliminado');
+    });
+  }
+
   /* Conecta los controles del panel a la memoria */
   _wirePanel() {
     const body = this.el.panelBody;
@@ -424,5 +571,15 @@ export class UI {
 }
 
 function prioOrder(p) { return ({ alta: 0, media: 1, baja: 2 })[p] ?? 1; }
+
+/* Miniatura JPEG (~480 px) para la cuadrícula de la galería */
+async function makeThumb(blob) {
+  const bmp = await createImageBitmap(blob, { resizeWidth: 480 });
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = bmp.height;
+  c.getContext('2d').drawImage(bmp, 0, 0);
+  if (bmp.close) bmp.close();
+  return c.toDataURL('image/jpeg', 0.72);
+}
 
 export default UI;

@@ -14,7 +14,10 @@ const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate(
 const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 export class CommandRouter {
-  constructor(memory) { this.memory = memory; }
+  constructor(memory) {
+    this.memory = memory;
+    this.semantic = null; // SemanticMemory (lo conecta app.js) para buscar fotos por significado
+  }
 
   /* Punto de entrada. Devuelve un objeto de resultado o {handled:false}. */
   async handle(rawText) {
@@ -22,8 +25,26 @@ export class CommandRouter {
     if (!t) return { handled: false };
     const low = t.toLowerCase();
 
+    // --- Fotos y videos: buscar por descripción / abrir cámara ---
+    let m = t.match(/\b(?:mu[ée]strame|ens[ée][ñn]ame|busca(?:me)?|ver|encuentra)\s+(?:las?\s+|los?\s+|mis\s+)?(fotos?|videos?|im[áa]genes?)\s+(?:de la|del|de|con|sobre)\s+(.+)$/i);
+    if (m) {
+      const kind = /video/i.test(m[1]) ? 'video' : 'foto';
+      const qy = m[2].trim().replace(/[.?!]$/, '');
+      const res = await this._searchMedia(qy, /imagen|foto/i.test(m[1]) ? 'foto' : (/video/i.test(m[1]) ? 'video' : null));
+      if (!res.length)
+        return this._ok('buscar_media', `No encontré ${m[1]} que coincidan con "${qy}".`, { action: 'open', tab: 'media' });
+      return this._ok('buscar_media', `Encontré ${res.length} ${res.length === 1 ? (kind === 'video' ? 'video' : 'foto') : m[1]} de ${qy}. Te ${res.length === 1 ? 'lo' : 'los'} muestro.`,
+        { action: 'media', tab: 'media', mediaIds: res.map((r) => r.id), utterance: t });
+    }
+    if (/\b(?:toma(?:r)?|saca(?:r)?|haz)\s+(?:una\s+)?foto\b/.test(low) &&
+        !/\b(tengo que|debo|recu[eé]rdame|recuerda|av[ií]same|tarea|alarma|ma[ñn]ana)\b/.test(low))
+      return this._ok('capturar_foto', 'Abriendo la galería: toca "Tomar foto".', { action: 'open', tab: 'media' });
+    if (/\bgraba(?:r)?\s+(?:un\s+)?v[ií]deo\b/.test(low) &&
+        !/\b(tengo que|debo|recu[eé]rdame|recuerda|tarea|alarma)\b/.test(low))
+      return this._ok('capturar_video', 'Abriendo la galería: toca "Grabar video".', { action: 'open', tab: 'media' });
+
     // --- Navegación ---
-    const nav = low.match(/\b(abre|abrir|ve a|mu[eé]strame|muestra|ir a)\s+(las?\s+|mis?\s+)?(notas?|tareas?|pendientes|agenda|calendario|eventos?|alarmas?|recordatorios?|ajustes|configuraci[oó]n)/);
+    const nav = low.match(/\b(abre|abrir|ve a|mu[eé]strame|muestra|ir a)\s+(las?\s+|mis?\s+)?(notas?|tareas?|pendientes|agenda|calendario|eventos?|alarmas?|recordatorios?|fotos?|videos?|galer[ií]a|ajustes|configuraci[oó]n)/);
     if (nav) {
       const dest = this._mapTab(nav[3]);
       return this._ok('navegar', `Abriendo ${dest}.`, { action: 'open', tab: dest, silent: true });
@@ -31,7 +52,7 @@ export class CommandRouter {
 
     // --- Contactos: guardar dato ("recuerda que el número de mamá es…") ---
     // (antes que las alarmas: "recuerda…" no debe crear un recordatorio aquí)
-    let m = t.match(/\b(?:recuerda|guarda|apunta)\s+(?:que\s+)?el\s+(n[úu]mero|tel[ée]fono|correo|email|mail)\s+de\s+(.+?)\s+(?:es|:)\s*(.+)$/i);
+    m = t.match(/\b(?:recuerda|guarda|apunta)\s+(?:que\s+)?el\s+(n[úu]mero|tel[ée]fono|correo|email|mail)\s+de\s+(.+?)\s+(?:es|:)\s*(.+)$/i);
     if (m) {
       const esMail = /correo|email|mail/i.test(m[1]);
       const nombre = m[2].trim().replace(/^(mi|la|el)\s+/i, '');
@@ -259,6 +280,24 @@ export class CommandRouter {
     return this._ok('completar_tarea', `Marqué como hecha: "${match.texto}".`, { action: 'refresh', tab: 'tareas' });
   }
 
+  /* Busca fotos/videos por descripción: coincidencia de texto + semántica */
+  async _searchMedia(query, kind) {
+    const all = (await this.memory.listItems('media')).filter((x) => !kind || x.kind === kind);
+    const q = normName(query);
+    const sub = all.filter((x) => normName(x.descripcion || '').includes(q));
+    let sem = [];
+    if (this.semantic && this.semantic.ready) {
+      try {
+        sem = (await this.semantic.search(query, 12, 0.74))
+          .filter((r) => r.type === 'media')
+          .map((r) => all.find((x) => x.id === r.id))
+          .filter(Boolean);
+      } catch (e) {}
+    }
+    const seen = new Set();
+    return [...sub, ...sem].filter((x) => !seen.has(x.id) && seen.add(x.id));
+  }
+
   /* -------- Contactos en memoria (mini-agenda local) -------- */
   async _contacto(nombre) {
     const q = normName(nombre);
@@ -273,6 +312,7 @@ export class CommandRouter {
       notas: 'notas', nota: 'notas', tareas: 'tareas', tarea: 'tareas', pendientes: 'tareas',
       agenda: 'eventos', calendario: 'eventos', eventos: 'eventos', evento: 'eventos',
       alarmas: 'alarmas', alarma: 'alarmas', recordatorios: 'alarmas', recordatorio: 'alarmas',
+      fotos: 'media', foto: 'media', videos: 'media', video: 'media', 'galería': 'media', galeria: 'media',
       ajustes: 'ajustes', 'configuración': 'ajustes', configuracion: 'ajustes'
     };
     return map[word] || 'tareas';

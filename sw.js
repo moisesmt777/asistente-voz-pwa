@@ -7,7 +7,7 @@
      · Modelos/pesos (WebLLM/HF)       -> los gestiona la propia librería en Cache API;
                                           aquí solo damos fallback cache-first perezoso.
    ============================================================ */
-const VERSION = 'v1.8.1';
+const VERSION = 'v1.9.0';
 const APP_CACHE = `asistente-app-${VERSION}`;
 const CDN_CACHE = `asistente-cdn-${VERSION}`;
 const RUNTIME_CACHE = `asistente-rt-${VERSION}`;
@@ -26,6 +26,7 @@ const APP_SHELL = [
   './js/wake-porcupine.js',
   './js/semantic-memory.js',
   './js/neural-tts.js',
+  './js/media-store.js',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
   './assets/icons/icon-maskable-512.png',
