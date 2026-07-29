@@ -11,7 +11,7 @@
    ============================================================ */
 import { VoiceEngine } from './voice-engine.js';
 import { AIBrain, MemoryStore } from './ai-brain.js';
-import { CommandRouter, cuando, fechaCorta } from './commands.js';
+import { CommandRouter, cuando, fechaCorta, normName } from './commands.js';
 import { SemanticMemory } from './semantic-memory.js';
 import { UI } from './ui.js';
 
@@ -76,6 +76,7 @@ class App {
     this._startAlarmLoop();
     this._handleLaunchAction();
     this.ui.onOpenSettings = () => { this._renderSettings(); this.ui.openSheet('settings'); };
+    this.ui.onAction = (data) => this._pickContact(data);
     await this.ui.renderTiles();
     await this.ui.renderPanel('tareas');
 
@@ -131,7 +132,9 @@ class App {
         if (cmd.utterance) await this.memory.recordExample(cmd.cmd, cmd.utterance);
         const msg = await this.memory.addMessage({ role: 'assistant', text: cmd.reply, cmd: cmd.cmd });
         this.msgCmd[msg.id] = cmd.cmd;
-        this.ui.addBot(cmd.reply, { mode: 'skill', id: msg.id });
+        const action = cmd.link ? { label: cmd.linkLabel || 'Abrir', href: cmd.link }
+          : cmd.pick ? { label: 'Elegir contacto', data: cmd.pick } : null;
+        this.ui.addBot(cmd.reply, { mode: 'skill', id: msg.id, action });
 
         if (cmd.tab) this.ui.focusTile(cmd.tab); // el orbe viaja al icono en uso
         if (cmd.action === 'open') { this.ui.openSheet('panel'); this.ui.renderPanel(cmd.tab); }
@@ -309,7 +312,7 @@ class App {
         <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.5.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.6.0</div>
     `;
     this._wireSettings();
   }
@@ -460,6 +463,33 @@ class App {
         load.disabled = false; load.textContent = 'Descargar y activar modelo';
       }
     });
+  }
+
+  /* Respaldo de deep links: Contact Picker del sistema (tú eliges; la app
+     solo recibe ese contacto) y deja el enlace listo a un toque */
+  async _pickContact(data) {
+    if (!(navigator.contacts && navigator.contacts.select)) {
+      this.ui.toast('👂', `Este navegador no tiene selector de contactos. Dime: "recuerda que el número de ${data.nombre} es…"`, 6000);
+      return;
+    }
+    try {
+      const sel = await navigator.contacts.select(['name', 'tel']);
+      const c = sel && sel[0];
+      if (!c || !c.tel || !c.tel.length) return;
+      const tel = String(c.tel[0]).replace(/[^\d+]/g, '');
+      const nombre = (data.nombre || (c.name && c.name[0]) || '').trim();
+      if (nombre && tel) {
+        await this.memory.putItem({ type: 'contacto', id: 'ct_' + normName(nombre), nombre, telefono: tel });
+        this.ui.toast('✅', `Guardé el número de ${nombre}; la próxima vez será directo.`);
+      }
+      const href = data.accion === 'wa'
+        ? 'https://wa.me/' + tel.replace(/\D/g, '') + (data.body ? '?text=' + encodeURIComponent(data.body) : '')
+        : data.accion === 'sms'
+          ? 'sms:' + tel + (data.body ? '?body=' + encodeURIComponent(data.body) : '')
+          : 'tel:' + tel;
+      const label = data.accion === 'wa' ? 'Abrir WhatsApp' : data.accion === 'sms' ? 'Abrir SMS' : 'Llamar';
+      this.ui.addBot(`Listo con el número de ${nombre || 'ese contacto'}.`, { mode: 'skill', action: { label, href } });
+    } catch (e) { /* el usuario canceló el selector */ }
   }
 
   /* Proactividad: saludo con la agenda del día y aviso de choques de horario */

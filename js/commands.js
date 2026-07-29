@@ -29,6 +29,32 @@ export class CommandRouter {
       return this._ok('navegar', `Abriendo ${dest}.`, { action: 'open', tab: dest, silent: true });
     }
 
+    // --- Contactos: guardar dato ("recuerda que el número de mamá es…") ---
+    // (antes que las alarmas: "recuerda…" no debe crear un recordatorio aquí)
+    let m = t.match(/\b(?:recuerda|guarda|apunta)\s+(?:que\s+)?el\s+(n[úu]mero|tel[ée]fono|correo|email|mail)\s+de\s+(.+?)\s+(?:es|:)\s*(.+)$/i);
+    if (m) {
+      const esMail = /correo|email|mail/i.test(m[1]);
+      const nombre = m[2].trim().replace(/^(mi|la|el)\s+/i, '');
+      const valor = esMail ? m[3].trim().replace(/[.,;]$/, '') : m[3].replace(/[^\d+]/g, '');
+      if (!valor) return this._ok('guardar_contacto', 'No capté el dato. ¿Me lo repites?');
+      const prev = (await this._contacto(nombre)) || { type: 'contacto', id: 'ct_' + normName(nombre), nombre };
+      if (esMail) prev.email = valor; else prev.telefono = valor;
+      await this.memory.putItem(prev);
+      return this._ok('guardar_contacto', `Guardado: el ${esMail ? 'correo' : 'número'} de ${prev.nombre} es ${valor}.`, { utterance: t });
+    }
+
+    // --- Contactos: consultar ---
+    m = low.match(/\b(?:cu[áa]l es|dime|dame)\s+el\s+(n[úu]mero|tel[ée]fono|correo|email)\s+de\s+(.+)/);
+    if (m) {
+      const esMail = /correo|email/.test(m[1]);
+      const c = await this._contacto(m[2].replace(/[.?!]$/, ''));
+      if (!c || !(esMail ? c.email : c.telefono))
+        return this._ok('consulta_contacto', `No tengo ese dato. Dime: "recuerda que el ${esMail ? 'correo' : 'número'} de ${m[2].trim().replace(/[.?!]$/, '')} es…".`);
+      const valor = esMail ? c.email : c.telefono;
+      return this._ok('consulta_contacto', `El ${esMail ? 'correo' : 'número'} de ${c.nombre} es ${valor}.`,
+        esMail ? { link: 'mailto:' + valor, linkLabel: 'Escribir correo' } : { link: 'tel:' + valor, linkLabel: 'Llamar' });
+    }
+
     // --- Consultas (lecturas) ---
     const q = await this._detectQuery(low);
     if (q) return q;
@@ -56,6 +82,91 @@ export class CommandRouter {
       const tk = await this.memory.putItem({ type: 'tarea', texto, prio: 'media', done: false });
       return this._ok('crear_tarea', `No capté la hora, lo agendé como tarea: "${texto}".`,
         { action: 'refresh', tab: 'tareas', item: tk, utterance: t });
+    }
+
+    // --- Acción: llamar (deep link tel:) ---
+    m = t.match(/\b(?:llama(?:r)?|ll[áa]male|marca(?:r)?)\s+(?:a|al)?\s*(.+)$/i);
+    if (m && !/\b(se|me|te|le)\s+llama/i.test(low) && !/\b(nota|tarea|evento|alarma)\b/i.test(low)) {
+      const dest = m[1].trim().replace(/^(mi|la|el)\s+/i, '').replace(/\s+por\s+tel[ée]fono$/i, '').replace(/[.?!]$/, '');
+      if (/^[\d+\s.-]{6,}$/.test(dest)) {
+        const num = dest.replace(/[^\d+]/g, '');
+        return this._ok('llamar', `Llamada al ${num} preparada. Confirma con el botón.`,
+          { link: 'tel:' + num, linkLabel: 'Llamar', utterance: t });
+      }
+      const c = await this._contacto(dest);
+      if (c && c.telefono)
+        return this._ok('llamar', `Llamada a ${c.nombre} preparada. Confirma con el botón.`,
+          { link: 'tel:' + c.telefono, linkLabel: 'Llamar a ' + c.nombre, utterance: t });
+      return this._ok('llamar', `No tengo el número de ${dest}. Elígelo de tus contactos o dime: "recuerda que el número de ${dest} es…".`,
+        { pick: { accion: 'tel', nombre: dest }, utterance: t });
+    }
+
+    // --- Acción: mensaje (WhatsApp / SMS) con el texto ya escrito ---
+    let msg = t.match(/\b(?:escr[íi]bele|env[íi]ale|m[áa]ndale|mandale)\s+(?:un\s+)?(?:mensaje\s+|sms\s+|whatsapp\s+|wasap\s+|texto\s+)?(?:por\s+whatsapp\s+|por\s+sms\s+|por\s+mensaje\s+)?a\s+(.+?)(?:\s+que\s+|\s*:\s*)(.+)$/i);
+    if (!msg) msg = t.match(/\b(?:whatsapp|wasap)\s+(?:a|para)\s+(.+?)(?:\s+que\s+|\s*:\s*)(.+)$/i);
+    if (msg) {
+      const canal = /\bsms\b/i.test(low) ? 'sms' : 'wa';
+      const nombre = msg[1].trim().replace(/^(mi|la|el)\s+/i, '');
+      const body = msg[2].trim();
+      const c = await this._contacto(nombre);
+      if (c && c.telefono) {
+        const link = canal === 'wa'
+          ? 'https://wa.me/' + c.telefono.replace(/\D/g, '') + '?text=' + encodeURIComponent(body)
+          : 'sms:' + c.telefono + '?body=' + encodeURIComponent(body);
+        return this._ok('mensaje', `Mensaje para ${c.nombre} preparado: "${short(body)}". Solo te falta enviarlo.`,
+          { link, linkLabel: canal === 'wa' ? 'Abrir WhatsApp' : 'Abrir SMS', utterance: t });
+      }
+      return this._ok('mensaje', `No tengo el número de ${nombre}. Elígelo de tus contactos o dime: "recuerda que el número de ${nombre} es…".`,
+        { pick: { accion: canal, nombre, body }, utterance: t });
+    }
+
+    // --- Acción: correo (mailto:) ---
+    m = t.match(/\b(?:correo|email|mail)\s+(?:a|para)\s+(.+?)(?:\s+asunto\s+(.+?))?(?:\s+(?:que\s+diga|diciendo|cuerpo)\s+(.+))?$/i);
+    if (m) {
+      const destRaw = m[1].trim().replace(/[.?!]$/, '');
+      let addr = /\S+@\S+/.test(destRaw) ? destRaw : null;
+      let quien = destRaw;
+      if (!addr) {
+        const c = await this._contacto(destRaw);
+        if (c && c.email) { addr = c.email; quien = c.nombre; }
+      }
+      if (!addr)
+        return this._ok('correo', `No tengo el correo de ${destRaw}. Dime: "recuerda que el correo de ${destRaw} es…".`, { utterance: t });
+      const params = [];
+      if (m[2]) params.push('subject=' + encodeURIComponent(m[2].trim()));
+      if (m[3]) params.push('body=' + encodeURIComponent(m[3].trim()));
+      return this._ok('correo', `Correo para ${quien} preparado.`,
+        { link: 'mailto:' + addr + (params.length ? '?' + params.join('&') : ''), linkLabel: 'Abrir correo', utterance: t });
+    }
+
+    // --- Acción: mapas (buscar lugar o ruta) ---
+    let dir = t.match(/\b(?:c[óo]mo\s+llego\s+a(?:l)?|ll[ée]vame\s+a(?:l)?)\s+(.+)$/i);
+    let busca = !dir && (t.match(/\b(?:d[óo]nde\s+(?:queda|hay|est[áa]n?))\s+(.+)$/i)
+      || t.match(/\bbusca(?:me)?\s+(.+?)\s+(?:en\s+(?:el\s+)?maps?|en\s+el\s+mapa|cerca(?:\s+de\s+m[íi])?)\s*[.?!]?$/i));
+    if ((dir || busca) && !/\b(nota|tarea|evento|alarma|agenda)\b/i.test(low)) {
+      const lugar = (dir ? dir[1] : busca[1]).trim().replace(/^(mi|la|el|un|una)\s+/i, '').replace(/[.?!¿]+$/, '');
+      const url = dir
+        ? 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(lugar)
+        : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(lugar);
+      return this._ok('mapa', dir ? `Ruta a ${lugar} lista.` : `Búsqueda de "${lugar}" en el mapa lista.`,
+        { link: url, linkLabel: 'Abrir Maps', utterance: t });
+    }
+
+    // --- Acción: música (YouTube) ---
+    m = t.match(/\b(?:pon(?:me)?|reproduce|reprod[úu]ceme|quiero\s+escuchar)\s+(?:m[úu]sica\s+(?:de\s+)?|la\s+canci[óo]n\s+|algo\s+de\s+)(.+)$/i)
+      || t.match(/\breproduce\s+(.+)$/i);
+    if (m && !/\b(alarma|recordatorio|nota|tarea|evento)\b/i.test(low)) {
+      const qy = m[1].trim().replace(/[.?!]$/, '');
+      return this._ok('musica', `Música de ${qy} lista en YouTube.`,
+        { link: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(qy), linkLabel: 'Abrir YouTube', utterance: t });
+    }
+
+    // --- Acción: búsqueda web ---
+    m = t.match(/\b(?:busca(?:me)?\s+en\s+(?:internet|google|la\s+web)|googlea)\s+(.+)$/i);
+    if (m) {
+      const qy = m[1].trim().replace(/[.?!]$/, '');
+      return this._ok('buscar_web', `Búsqueda de "${short(qy)}" preparada.`,
+        { link: 'https://www.google.com/search?q=' + encodeURIComponent(qy), linkLabel: 'Buscar en Google', utterance: t });
     }
 
     // --- Nota ---
@@ -148,6 +259,15 @@ export class CommandRouter {
     return this._ok('completar_tarea', `Marqué como hecha: "${match.texto}".`, { action: 'refresh', tab: 'tareas' });
   }
 
+  /* -------- Contactos en memoria (mini-agenda local) -------- */
+  async _contacto(nombre) {
+    const q = normName(nombre);
+    if (!q) return null;
+    const all = await this.memory.listItems('contacto');
+    return all.find((c) => normName(c.nombre) === q)
+      || all.find((c) => normName(c.nombre).includes(q) || q.includes(normName(c.nombre)));
+  }
+
   _mapTab(word) {
     const map = {
       notas: 'notas', nota: 'notas', tareas: 'tareas', tarea: 'tareas', pendientes: 'tareas',
@@ -181,6 +301,10 @@ export function cuando(ts) {
 }
 function parseYmd(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
 function short(s) { return s.length > 42 ? s.slice(0, 42) + '…' : s; }
+
+/* Normaliza nombres para comparar contactos (sin acentos ni signos) */
+export const normName = (s) => (s || '').toLowerCase().normalize('NFD')
+  .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
 
 export function extraerTextoRecordatorio(t) {
   let x = t

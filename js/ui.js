@@ -29,7 +29,9 @@ export const ICON = {
   clock: svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
   search: svg('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'),
   save: svg('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'),
-  wave: svg('<line x1="3" y1="10" x2="3" y2="14"/><line x1="7" y1="7" x2="7" y2="17"/><line x1="11" y1="4" x2="11" y2="20"/><line x1="15" y1="7" x2="15" y2="17"/><line x1="19" y1="10" x2="19" y2="14"/>')
+  wave: svg('<line x1="3" y1="10" x2="3" y2="14"/><line x1="7" y1="7" x2="7" y2="17"/><line x1="11" y1="4" x2="11" y2="20"/><line x1="15" y1="7" x2="15" y2="17"/><line x1="19" y1="10" x2="19" y2="14"/>'),
+  external: svg('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>'),
+  contact: svg('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>')
 };
 
 /* Iconos heredados (emoji) -> icono SVG, para no tocar cada llamada a toast() */
@@ -72,6 +74,7 @@ export class UI {
     };
     this.onFeedback = null; // (msgId, dir) => {}
     this.onOpenSettings = null; // abre Ajustes (lo conecta app.js)
+    this.onAction = null; // acción con datos (p. ej. abrir Contact Picker)
     this.activeTab = 'tareas';
   }
 
@@ -102,7 +105,7 @@ export class UI {
   addUser(text) { return this._bubble('user', esc(text)); }
   sys(text) { this.showReply(text); return this._bubble('sys', esc(text)); }
 
-  addBot(text, { mode = 'rules', id = null } = {}) {
+  addBot(text, { mode = 'rules', id = null, action = null } = {}) {
     const b = document.createElement('div');
     b.className = 'bubble bot';
     b.innerHTML = `<div class="b-text">${esc(text)}</div>` +
@@ -117,9 +120,11 @@ export class UI {
       }));
       b.appendChild(fb);
     }
+    const act = this._actionEl(action);
+    if (act) b.appendChild(act);
     this.el.conv.appendChild(b);
     this._scroll();
-    this.showReply(text);
+    this.showReply(text, action);
     return b;
   }
 
@@ -224,14 +229,33 @@ export class UI {
     }, 2600);
   }
 
+  /* Botón de acción (deep link o Contact Picker) para una respuesta */
+  _actionEl(action) {
+    if (!action || !(action.href || action.data)) return null;
+    const act = document.createElement('div');
+    act.className = 'act';
+    if (action.href) {
+      act.innerHTML = `<a class="act-btn" href="${esc(action.href)}" target="_blank" rel="noopener">${ICON.external}${esc(action.label || 'Abrir')}</a>`;
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'act-btn';
+      btn.innerHTML = `${ICON.contact}${esc(action.label || 'Elegir')}`;
+      btn.addEventListener('click', () => this.onAction && this.onAction(action.data));
+      act.appendChild(btn);
+    }
+    return act;
+  }
+
   /* Última respuesta del asistente como tarjeta flotante sobre el orbe */
-  showReply(text) {
+  showReply(text, action = null) {
     const rc = this.el.replyCard;
     if (!rc) return;
     rc.textContent = text;
+    const act = this._actionEl(action);
+    if (act) rc.appendChild(act);
     rc.hidden = false;
     clearTimeout(this._replyTimer);
-    this._replyTimer = setTimeout(() => { rc.hidden = true; }, 7000);
+    this._replyTimer = setTimeout(() => { rc.hidden = true; }, action ? 12000 : 7000);
   }
 
   /* -------- Panel de skills -------- */
