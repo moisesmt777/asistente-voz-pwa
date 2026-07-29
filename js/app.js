@@ -11,7 +11,7 @@
    ============================================================ */
 import { VoiceEngine } from './voice-engine.js';
 import { AIBrain, MemoryStore } from './ai-brain.js';
-import { CommandRouter, cuando } from './commands.js';
+import { CommandRouter, cuando, fechaCorta } from './commands.js';
 import { SemanticMemory } from './semantic-memory.js';
 import { UI } from './ui.js';
 
@@ -28,6 +28,7 @@ class App {
     this.brain.semantic = this.semantic;
     this.msgCmd = {};   // id de mensaje -> comando (para feedback)
     this.busy = false;
+    this.battery = null; // { pct, charging } — lo alimenta _startBatteryWatch
   }
 
   async start() {
@@ -78,8 +79,10 @@ class App {
     await this.ui.renderTiles();
     await this.ui.renderPanel('tareas');
 
-    // Saludo inicial
+    // Saludo inicial + proactividad (briefing de agenda y vigilancia de batería)
     this.ui.sys('Asistente listo. Toca el micrófono o escribe.');
+    this._startupBriefing();
+    this._startBatteryWatch();
     if (!caps.webSpeechSTT && savedStt === 'webspeech') {
       this.ui.toast('🎙️', 'La voz nativa requiere HTTPS. En Ajustes puedes activar Whisper.', 5000);
     }
@@ -306,7 +309,7 @@ class App {
         <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.4.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.5.0</div>
     `;
     this._wireSettings();
   }
@@ -375,6 +378,9 @@ class App {
       if (this.semantic.ready) {
         const n = await this.semantic.reindexAll();
         this.ui.toast('🔎', n ? `Reindexando ${n} elementos…` : 'El índice ya está al día');
+      } else if (this._lowBattery() && !confirm(`Batería al ${this.battery.pct}% y sin cargador. La descarga (~110 MB) puede esperar, ¿continuar?`)) {
+        semBtn.disabled = false;
+        return;
       } else {
         await this._startSemantic(true);
       }
@@ -434,6 +440,7 @@ class App {
 
     const load = g('loadModel');
     load && load.addEventListener('click', async () => {
+      if (this._lowBattery() && !confirm(`Batería al ${this.battery.pct}% y sin cargador. La descarga del modelo es grande, ¿continuar igualmente?`)) return;
       const id = g('setModel').value;
       const prog = g('modelProg'); const bar = prog.querySelector('i'); const msg = g('modelMsg');
       prog.style.display = 'block'; load.disabled = true; load.textContent = 'Descargando…';
@@ -454,6 +461,62 @@ class App {
       }
     });
   }
+
+  /* Proactividad: saludo con la agenda del día y aviso de choques de horario */
+  async _startupBriefing() {
+    try {
+      const hoy = new Date().toISOString().slice(0, 10);
+      const [tareas, eventos] = await Promise.all([
+        this.memory.listItems('tarea'), this.memory.listItems('evento')]);
+      const pend = tareas.filter((t) => !t.done);
+      const evHoy = eventos.filter((e) => e.fecha === hoy)
+        .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+      const partes = [];
+      if (evHoy.length) {
+        const primero = evHoy[0].hora ? ` — el primero, ${evHoy[0].titulo} a las ${evHoy[0].hora}` : '';
+        partes.push(`${evHoy.length === 1 ? 'un evento hoy' : evHoy.length + ' eventos hoy'}${primero}`);
+      }
+      if (pend.length) partes.push(pend.length === 1 ? 'una tarea pendiente' : `${pend.length} tareas pendientes`);
+      if (partes.length) {
+        const name = await this.memory.getPref('name', 'Moises');
+        this.ui.showReply(`Hola, ${name}: tienes ${partes.join(' y ')}.`);
+      }
+      // Dos eventos con hora el mismo día a menos de 30 minutos -> aviso
+      const toMin = (h) => { const [H, M] = h.split(':').map(Number); return H * 60 + (M || 0); };
+      const prox = eventos.filter((e) => e.fecha >= hoy && e.hora);
+      for (let i = 0; i < prox.length; i++) {
+        for (let j = i + 1; j < prox.length; j++) {
+          if (prox[i].fecha === prox[j].fecha && Math.abs(toMin(prox[i].hora) - toMin(prox[j].hora)) < 30) {
+            this.ui.toast('⚠️', `Agenda: "${prox[i].titulo}" y "${prox[j].titulo}" casi chocan el ${fechaCorta(prox[i].fecha)} (${prox[i].hora} y ${prox[j].hora}).`, 7000);
+            return;
+          }
+        }
+      }
+    } catch (e) { console.warn('[Briefing]', e); }
+  }
+
+  /* Proactividad: batería al contexto de la IA + avisos de carga */
+  async _startBatteryWatch() {
+    if (!navigator.getBattery) return; // API no disponible: seguimos igual
+    try {
+      const b = await navigator.getBattery();
+      const update = () => {
+        const pct = Math.round(b.level * 100);
+        this.battery = { pct, charging: b.charging };
+        this.brain.battery = `${pct}%${b.charging ? ' (cargando)' : ''}`;
+        if (!b.charging && pct <= 15 && !this._lowBattWarned) {
+          this._lowBattWarned = true;
+          this.ui.toast('⚠️', `Batería al ${pct}%: conecta el cargador pronto.`, 6000);
+        }
+        if (b.charging || pct > 20) this._lowBattWarned = false;
+      };
+      update();
+      b.addEventListener('levelchange', update);
+      b.addEventListener('chargingchange', update);
+    } catch (e) {}
+  }
+
+  _lowBattery() { return this.battery && !this.battery.charging && this.battery.pct <= 20; }
 
   /* Activa el motor de embeddings (descarga única ~110 MB) e indexa lo pendiente */
   async _startSemantic(interactive) {

@@ -7,7 +7,7 @@
      · Modelos/pesos (WebLLM/HF)       -> los gestiona la propia librería en Cache API;
                                           aquí solo damos fallback cache-first perezoso.
    ============================================================ */
-const VERSION = 'v1.4.0';
+const VERSION = 'v1.5.0';
 const APP_CACHE = `asistente-app-${VERSION}`;
 const CDN_CACHE = `asistente-cdn-${VERSION}`;
 const RUNTIME_CACHE = `asistente-rt-${VERSION}`;

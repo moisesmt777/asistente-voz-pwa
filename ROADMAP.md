@@ -10,6 +10,7 @@ Marca cada casilla `[ ]` → `[x]` conforme avances.
 > · **Fase 2A** ⏸️ código integrado y EN ESPERA: Picovoice exige correo de empresa para crear la cuenta. Cuando lo tengas: AccessKey en Ajustes + entrenar keyword `asistente` (`.ppn` → `assets/porcupine/`). Mientras, funciona la escucha continua.
 > · **Fase 3** ✅ implementada en código (RAG local con multilingual‑e5‑small, panel de Aprendizaje, exportar/importar) — pendiente de probar en tu teléfono.
 > · **Rediseño UI (v1.4.0):** pantalla principal tipo launcher (iconos de colores con contadores: Tareas, Notas, Agenda, Recordatorios, Conversación, Ajustes); el orbe se acerca al icono de lo que estés usando; la conversación vive en su propio panel; iconografía SVG profesional (sin emojis).
+> · **Proactividad y personalidad (v1.5.0):** identidad orientada a la acción con guardrail anti‑alucinación de capacidades; tono adaptativo según urgencia del mensaje; briefing de agenda al abrir (eventos de hoy, tareas pendientes, choques de horario a <30 min); consciencia de batería (contexto para la IA, aviso con nivel bajo y confirmación antes de descargas grandes sin cargador). Pendiente (bloque 🟡): skills de deep links (tel:, wa.me, Maps, YouTube) con botón de confirmación.
 
 ---
 

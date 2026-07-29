@@ -16,6 +16,7 @@ Asistente virtual **controlado por voz**, empaquetado como **PWA instalable en A
 - **Memoria persistente:** notas, tareas, eventos, alarmas, historial y preferencias en **IndexedDB**.
 - **Auto-mejora:** *few-shot prompting* dinámico que se adapta a los comandos más usados y al feedback (👍/👎).
 - **Búsqueda semántica local (RAG):** embeddings multilingües en el dispositivo (Transformers.js + IndexedDB) para encontrar tus notas por significado; los recuerdos relevantes se inyectan al LLM. Panel de "Aprendizaje" y exportar/importar tu memoria.
+- **Proactividad:** briefing de agenda al abrir (eventos de hoy, tareas pendientes y choques de horario) y consciencia de batería (contexto para la IA, avisos y confirmación antes de descargas grandes); tono adaptativo según la urgencia del mensaje.
 - **Skills:** notas, tareas (con prioridad), agenda/eventos y alarmas — por voz o toque.
 - **PWA nativa:** `manifest.json` completo con iconos, tema, accesos directos y modo pantalla completa.
 

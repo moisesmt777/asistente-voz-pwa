@@ -220,6 +220,7 @@ export class AIBrain {
     this.engine = null;
     this.modelId = null;
     this.semantic = null;         // SemanticMemory (RAG local); lo conecta app.js
+    this.battery = null;          // p. ej. "18%" o "76% (cargando)"; lo alimenta app.js
     this.mode = 'rules';          // 'llm' | 'rules'
     this.loading = false;
   }
@@ -308,13 +309,27 @@ export class AIBrain {
     const precision = totalDown >= 3 ? '\nEl usuario ha marcado respuestas anteriores como poco útiles: sé más preciso, breve y evita rodeos.' : '';
 
     return (
-      `Eres "Asistente", el asistente personal de ${name}. Hablas español neutro, ${tono}. ` +
-      `Respondes de forma breve (1-3 frases), útil y conversacional, apta para leerse en voz alta. ` +
+      `Eres "Asistente", el asistente personal de ${name} en su teléfono. Tu objetivo es reducir la fricción entre lo que piensa y lo que queda hecho: actúas orientado a la acción, conciso y contextual. Hablas español neutro, ${tono}. ` +
+      `Respondes de forma breve (1-3 frases), apta para leerse en voz alta. Cuando convenga, ofrece el siguiente paso concreto ("¿te lo agendo?", "¿lo apunto?") en vez de explicar cómo hacerlo. ` +
       `No inventes datos personales. Si te piden crear notas, tareas, eventos o alarmas, confírmalo con naturalidad.` +
+      `\nLímites (no finjas capacidades): vives en una app web; no controlas el sistema ni otras apps, no ves cámara ni pantalla, y solo conoces la memoria de la app y lo que ${name} te cuente.` +
       `\nFecha y hora actual: ${now.toLocaleString('es')}.` +
+      (this.battery ? `\nBatería del dispositivo: ${this.battery}.` : '') +
       (ctx ? `\nContexto del usuario:${ctx}` : '') +
       fewshot + precision
     );
+  }
+
+  /* Adaptabilidad emocional: directiva de tono según urgencia/estructura */
+  static toneFor(text) {
+    const t = (text || '').trim();
+    const urgente = /!|¡|\b(ayuda|urgente|ya mismo|r[áa]pido|socorro|auxilio|emergencia)\b/i.test(t) ||
+      (t.length > 6 && t === t.toUpperCase());
+    if (urgente && t.length <= 60)
+      return 'El usuario suena urgente o frustrado: responde hiperconciso y directo, la solución primero, sin saludos ni cortesías.';
+    if (t.length > 120)
+      return 'Pregunta exploratoria: puedes ser algo más cálido y detallado (máximo 4 frases).';
+    return '';
   }
 
   /* Respuesta conversacional (usa LLM si está listo; si no, respuesta simple) */
@@ -331,6 +346,8 @@ export class AIBrain {
           system += '\nRecuerdos relevantes de la memoria del usuario (úsalos solo si vienen al caso):' +
             recall.map((r) => `\n- [${r.type}] ${r.text}`).join('');
         }
+        const tone = AIBrain.toneFor(userText);
+        if (tone) system += '\n' + tone;
         // Qwen3/3.5 "razonan" con bloques <think>: los desactivamos para voz (soft switch)
         if (/^Qwen3/i.test(this.modelId || '')) system += '\n/no_think';
         const history = await this.memory.recentMessages(8);
