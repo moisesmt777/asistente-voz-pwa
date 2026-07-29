@@ -223,6 +223,7 @@ export class AIBrain {
     this.battery = null;          // p. ej. "18%" o "76% (cargando)"; lo alimenta app.js
     this.mode = 'rules';          // 'llm' | 'rules'
     this.loading = false;
+    this.loadingId = null;        // id del modelo que se está cargando ahora
   }
 
   /* Detección de WebGPU */
@@ -250,14 +251,16 @@ export class AIBrain {
 
   /* Carga (descarga + compila) el modelo en el dispositivo */
   async loadModel(modelId, onProgress) {
-    if (this.loading) throw new Error('Ya hay una carga de modelo en curso.');
+    const id = modelId || this.opts.defaultModel;
+    if (this.loading)
+      throw new Error(`Ya estoy cargando ${this.loadingId || 'otro modelo'}. Espera a que termine o recarga la app para cambiar.`);
     if (!(await AIBrain.hasWebGPU())) {
       throw new Error('WebGPU no está disponible en este dispositivo/navegador.');
     }
     this.loading = true;
+    this.loadingId = id;
     try {
       const { CreateMLCEngine, prebuiltAppConfig } = await import(WEBLLM_URL);
-      const id = modelId || this.opts.defaultModel;
       this.engine = await CreateMLCEngine(id, {
         appConfig: prebuiltAppConfig,
         initProgressCallback: (r) => { if (onProgress) onProgress(r); }
@@ -268,6 +271,7 @@ export class AIBrain {
       return id;
     } finally {
       this.loading = false;
+      this.loadingId = null;
     }
   }
 

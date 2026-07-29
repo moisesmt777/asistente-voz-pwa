@@ -32,6 +32,7 @@ class App {
     this.msgCmd = {};   // id de mensaje -> comando (para feedback)
     this.busy = false;
     this.battery = null; // { pct, charging } — lo alimenta _startBatteryWatch
+    this._ml = null;     // progreso de la carga de modelo LLM en curso
   }
 
   async start() {
@@ -58,15 +59,9 @@ class App {
     this.ui.setState('idle');
     this.ui.setBrandSub(brainState.webgpu ? 'IA local disponible' : 'Modo reglas (sin WebGPU)');
 
-    // Reactivar el último modelo usado (ya descargado → carga rápida desde caché)
+    // Reactivar el último modelo usado (con progreso visible y detector de atascos)
     const savedModel = await this.memory.getPref('model', null);
-    if (brainState.webgpu && savedModel) {
-      this.brain.loadModel(savedModel, (r) => {
-        const pct = Math.round((r.progress || 0) * 100);
-        this.ui.setBrandSub(`Cargando IA… ${pct}%`);
-      }).then(() => this.ui.setBrandSub('IA local activa'))
-        .catch(() => this.ui.setBrandSub('IA local disponible'));
-    }
+    if (brainState.webgpu && savedModel) this._loadModel(savedModel);
 
     // Memoria semántica: indexa cambios al vuelo y reactívala si ya se activó
     this.memory.onchange = (op, item) => {
@@ -319,7 +314,7 @@ class App {
         <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.8.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.8.1</div>
     `;
     this._wireSettings();
   }
@@ -451,26 +446,73 @@ class App {
 
     const load = g('loadModel');
     load && load.addEventListener('click', async () => {
-      if (this._lowBattery() && !confirm(`Batería al ${this.battery.pct}% y sin cargador. La descarga del modelo es grande, ¿continuar igualmente?`)) return;
       const id = g('setModel').value;
-      const prog = g('modelProg'); const bar = prog.querySelector('i'); const msg = g('modelMsg');
-      prog.style.display = 'block'; load.disabled = true; load.textContent = 'Descargando…';
-      try {
-        await this.brain.loadModel(id, (r) => {
-          const pct = Math.round((r.progress || 0) * 100);
-          bar.style.width = pct + '%';
-          msg.textContent = r.text || `Cargando… ${pct}%`;
-        });
-        msg.textContent = 'Modelo activo: ' + id;
-        this.ui.setBrandSub('IA local activa');
-        this.ui.toast('🧠', 'Modelo de IA activado');
-      } catch (e) {
-        msg.textContent = 'Error: ' + e.message;
-        this.ui.toast('⚠️', 'No se pudo cargar el modelo');
-      } finally {
-        load.disabled = false; load.textContent = 'Descargar y activar modelo';
+      if (this.brain.loading) {
+        // Hay una carga en marcha (p. ej. la autocarga del último modelo)
+        if (this.brain.loadingId === id) {
+          this.ui.toast('🧠', `Ese modelo ya se está cargando${this._ml ? ' (' + this._ml.pct + '%)' : ''}. Puedes ver el avance aquí y en la cabecera.`);
+        } else if (confirm(`Estoy cargando ${this.brain.loadingId}. ¿Cambiar a ${id}? La app se recargará para empezar la nueva descarga.`)) {
+          await this.memory.setPref('model', id);
+          location.reload();
+        }
+        return;
       }
+      if (this._lowBattery() && !confirm(`Batería al ${this.battery.pct}% y sin cargador. La descarga del modelo es grande, ¿continuar igualmente?`)) return;
+      load.disabled = true; load.textContent = 'Descargando…';
+      const ok = await this._loadModel(id);
+      this.ui.toast(ok ? '🧠' : '⚠️', ok ? 'Modelo de IA activado' : 'No se pudo cargar el modelo');
     });
+    // Si abres Ajustes con una carga ya en marcha, muestra su estado real
+    if (load && this.brain.loading) {
+      load.disabled = true;
+      load.textContent = `Cargando ${this.brain.loadingId}…`;
+      if (this._ml) this._mlProgress(this._ml.id, { progress: this._ml.pct / 100, text: this._ml.text });
+    }
+  }
+
+  /* ---- Carga del modelo LLM unificada: la autocarga y el botón de Ajustes
+     comparten progreso, mensajes y detector de atascos ---- */
+  _mlProgress(id, r) {
+    const pct = Math.round((r.progress || 0) * 100);
+    this._ml = { id, pct, text: r.text || `Cargando… ${pct}%`, at: Date.now() };
+    this.ui.setBrandSub(`Cargando IA (${pct}%)…`);
+    const body = this.ui.el.settingsBody;
+    const prog = body.querySelector('#modelProg');
+    const bar = body.querySelector('#modelProg i');
+    const msg = body.querySelector('#modelMsg');
+    if (prog) prog.style.display = 'block';
+    if (bar) bar.style.width = pct + '%';
+    if (msg) msg.textContent = `${id} — ${this._ml.text}`;
+  }
+
+  async _loadModel(id) {
+    this._ml = { id, pct: 0, text: 'Preparando…', at: Date.now() };
+    // Atasco: 45 s sin avance -> sugerir recargar (no se puede cancelar en vuelo)
+    const watch = setInterval(() => {
+      if (this._ml && Date.now() - this._ml.at > 45000) {
+        this.ui.setBrandSub(`Carga de ${id} sin avance; recarga la app para reintentar.`);
+      }
+    }, 15000);
+    try {
+      await this.brain.loadModel(id, (r) => this._mlProgress(id, r));
+      this.ui.setBrandSub('IA local activa');
+      const msg = this.ui.el.settingsBody.querySelector('#modelMsg');
+      if (msg) msg.textContent = 'Modelo activo: ' + id;
+      return true;
+    } catch (e) {
+      this.ui.setBrandSub('IA local disponible');
+      const msg = this.ui.el.settingsBody.querySelector('#modelMsg');
+      if (msg) msg.textContent = 'Error: ' + (e.message || e);
+      return false;
+    } finally {
+      clearInterval(watch);
+      this._ml = null;
+      const body = this.ui.el.settingsBody;
+      const load = body.querySelector('#loadModel');
+      if (load) { load.disabled = false; load.textContent = 'Descargar y activar modelo'; }
+      const prog = body.querySelector('#modelProg');
+      if (prog) setTimeout(() => { prog.style.display = 'none'; }, 900);
+    }
   }
 
   /* Voces neuronales Piper: lista con estado y descarga en Ajustes */
