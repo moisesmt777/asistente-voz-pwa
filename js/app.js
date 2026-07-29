@@ -13,6 +13,7 @@ import { VoiceEngine } from './voice-engine.js';
 import { AIBrain, MemoryStore } from './ai-brain.js';
 import { CommandRouter, cuando, fechaCorta, normName } from './commands.js';
 import { SemanticMemory } from './semantic-memory.js';
+import { NeuralTTS, NEURAL_VOICES } from './neural-tts.js';
 import { UI } from './ui.js';
 
 const $ = (s) => document.querySelector(s);
@@ -26,6 +27,8 @@ class App {
     this.router = new CommandRouter(this.memory);
     this.semantic = new SemanticMemory(this.memory);
     this.brain.semantic = this.semantic;
+    this.neuralTts = new NeuralTTS();
+    this.voice.neural = this.neuralTts;
     this.msgCmd = {};   // id de mensaje -> comando (para feedback)
     this.busy = false;
     this.battery = null; // { pct, charging } — lo alimenta _startBatteryWatch
@@ -44,6 +47,8 @@ class App {
     this.voice.setWakeWord(savedWake);
     this.voice.setWakeEngine(await this.memory.getPref('wakeEngine', 'auto'));
     this.voice.setPvAccessKey(await this.memory.getPref('pvAccessKey', null));
+    const nv = await this.memory.getPref('neuralVoice', null);
+    if (nv && (await this.neuralTts.isStored(nv))) this.voice.setNeuralVoice(nv);
 
     const caps = await this.voice.init();
     if (savedVoice) this.voice.setVoice(savedVoice);
@@ -274,6 +279,10 @@ class App {
           ${voices.length ? voices.map((v) => `<option value="${v.voiceURI}" ${prefs.ttsVoice === v.voiceURI ? 'selected' : ''}>${v.name} (${v.lang})</option>`).join('') : '<option>Voces del sistema</option>'}
         </select>
         <button class="btn ghost block" id="testVoice" style="margin-top:10px">Probar voz</button>
+        <label class="lbl">Voces neuronales (offline, más naturales)</label>
+        <div id="nvList"></div>
+        <div class="progress" id="nvProg" style="display:none"><i></i></div>
+        <div class="muted" id="nvMsg" style="margin-top:6px"></div>
       </div>
 
       <div class="card">
@@ -312,7 +321,7 @@ class App {
         <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.6.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.7.0</div>
     `;
     this._wireSettings();
   }
@@ -427,6 +436,7 @@ class App {
       impFile.value = '';
     });
     this._updateLearnPanel();
+    this._renderNeuralVoices();
 
     g('askNotif').addEventListener('click', () => {
       if ('Notification' in window) Notification.requestPermission().then((p) => this.ui.toast('🔔', 'Notificaciones: ' + p));
@@ -463,6 +473,62 @@ class App {
         load.disabled = false; load.textContent = 'Descargar y activar modelo';
       }
     });
+  }
+
+  /* Voces neuronales Piper: lista con estado y descarga en Ajustes */
+  async _renderNeuralVoices() {
+    const body = this.ui.el.settingsBody;
+    const list = body.querySelector('#nvList');
+    if (!list) return;
+    const cur = await this.memory.getPref('neuralVoice', null);
+    const stored = await this.neuralTts.stored();
+    list.innerHTML = NEURAL_VOICES.map((v) => {
+      const has = stored.includes(v.id);
+      const activa = cur === v.id;
+      return `
+      <div class="li" style="align-items:center">
+        <div class="body"><div class="t">${v.label}</div>
+          <div class="s">${activa ? 'Voz activa' : has ? 'Descargada' : '~' + v.mb + ' MB, una sola vez'}</div></div>
+        <button class="btn ${activa ? 'ghost' : ''}" data-nv="${v.id}" style="padding:9px 12px">${activa ? 'Activa' : has ? 'Usar' : 'Descargar'}</button>
+      </div>`;
+    }).join('') + `
+      <button class="btn ghost block" id="nvSystem" style="margin-top:2px">Volver a la voz del sistema</button>`;
+    list.querySelectorAll('[data-nv]').forEach((b) =>
+      b.addEventListener('click', () => this._useNeuralVoice(b.dataset.nv)));
+    const sys = list.querySelector('#nvSystem');
+    sys && sys.addEventListener('click', async () => {
+      await this.memory.setPref('neuralVoice', null);
+      this.voice.setNeuralVoice(null);
+      this._renderNeuralVoices();
+      this.ui.toast('🔊', 'Voz del sistema activada');
+    });
+  }
+
+  async _useNeuralVoice(id) {
+    const body = this.ui.el.settingsBody;
+    const prog = body.querySelector('#nvProg');
+    const bar = prog && prog.querySelector('i');
+    const msg = body.querySelector('#nvMsg');
+    try {
+      if (!(await this.neuralTts.isStored(id))) {
+        const v = NEURAL_VOICES.find((x) => x.id === id);
+        if (this._lowBattery() && !confirm(`Batería al ${this.battery.pct}% y sin cargador. La descarga (~${v ? v.mb : 60} MB) puede esperar, ¿continuar?`)) return;
+        if (prog) { prog.style.display = 'block'; bar.style.width = '0%'; }
+        if (msg) msg.textContent = 'Descargando voz…';
+        await this.neuralTts.download(id, (f) => { if (bar) bar.style.width = Math.round(f * 100) + '%'; });
+        if (msg) msg.textContent = 'Voz descargada.';
+      }
+      await this.memory.setPref('neuralVoice', id);
+      this.voice.setNeuralVoice(id);
+      this._renderNeuralVoices();
+      this.ui.toast('🔊', 'Voz neuronal activa');
+      this.voice.speak('Hola, así sueno yo. ¿Te gusta mi voz?');
+    } catch (e) {
+      if (msg) msg.textContent = 'Error: ' + (e.message || e);
+      this.ui.toast('⚠️', 'No se pudo activar la voz neuronal');
+    } finally {
+      if (prog) setTimeout(() => { prog.style.display = 'none'; }, 800);
+    }
   }
 
   /* Respaldo de deep links: Contact Picker del sistema (tú eliges; la app

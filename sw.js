@@ -7,7 +7,7 @@
      · Modelos/pesos (WebLLM/HF)       -> los gestiona la propia librería en Cache API;
                                           aquí solo damos fallback cache-first perezoso.
    ============================================================ */
-const VERSION = 'v1.6.0';
+const VERSION = 'v1.7.0';
 const APP_CACHE = `asistente-app-${VERSION}`;
 const CDN_CACHE = `asistente-cdn-${VERSION}`;
 const RUNTIME_CACHE = `asistente-rt-${VERSION}`;
@@ -25,6 +25,7 @@ const APP_SHELL = [
   './js/commands.js',
   './js/wake-porcupine.js',
   './js/semantic-memory.js',
+  './js/neural-tts.js',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
   './assets/icons/icon-maskable-512.png',
@@ -87,6 +88,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(staleWhileRevalidate(req, APP_CACHE));
     return;
   }
+
+  // Los pesos de voces Piper los gestiona vits-web en OPFS: no duplicarlos en caché
+  if (url.pathname.includes('piper-voices')) return;
 
   // 3) CDN de librerías -> cache-first (persisten tras la primera carga)
   if (CDN_HOSTS.some((h) => url.hostname.endsWith(h))) {

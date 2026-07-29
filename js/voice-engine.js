@@ -24,6 +24,7 @@ export class VoiceEngine {
       wakeWord: 'asistente',
       wakeEngine: 'auto',                  // 'auto' | 'porcupine' | 'webspeech'
       pvAccessKey: null,                   // AccessKey de Picovoice (solo vive en el dispositivo)
+      neuralVoice: null,                   // voiceId Piper activo (null = voz del sistema)
       rate: 1.03,
       pitch: 1.0,
       vadSilenceMs: 900,                   // silencio para autocorte
@@ -41,6 +42,7 @@ export class VoiceEngine {
     this._wake = null;         // instancia Web Speech para wake word
     this._porc = null;         // instancia Porcupine (wake word neuronal)
     this.wakeMode = null;      // 'porcupine' | 'webspeech' | null
+    this.neural = null;        // instancia NeuralTTS (la conecta app.js)
   }
 
   /* -------- Event emitter mínimo -------- */
@@ -393,8 +395,31 @@ export class VoiceEngine {
   }
 
   speak(text) {
-    if (!('speechSynthesis' in window) || !text) return Promise.resolve();
+    if (!text) return Promise.resolve();
     this.stopSpeaking();
+    if (this.neural && this.opts.neuralVoice) return this._speakNeural(text);
+    return this._speakSystem(text);
+  }
+
+  /* Voz neuronal (Piper/vits-web); si falla, cae a la voz del sistema */
+  async _speakNeural(text) {
+    try {
+      this.speaking = true;
+      if (this._porc) this._porc.pause();
+      this.emit('ttsstart');
+      await this.neural.speak(text, this.opts.neuralVoice);
+      this.speaking = false;
+      this.emit('ttsend');
+      this._porcMaybeResume();
+    } catch (e) {
+      console.warn('[TTS] Voz neuronal falló, uso la del sistema:', e);
+      this.speaking = false;
+      return this._speakSystem(text);
+    }
+  }
+
+  _speakSystem(text) {
+    if (!('speechSynthesis' in window) || !text) return Promise.resolve();
     return new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = this.opts.lang;
@@ -409,6 +434,7 @@ export class VoiceEngine {
   }
 
   stopSpeaking() {
+    if (this.neural) this.neural.stop();
     if ('speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending)) {
       speechSynthesis.cancel();
     }
@@ -425,6 +451,7 @@ export class VoiceEngine {
   setWakeWord(word) { this.opts.wakeWord = (word || 'asistente').toLowerCase(); }
   setWakeEngine(name) { this.opts.wakeEngine = name || 'auto'; }
   setPvAccessKey(key) { this.opts.pvAccessKey = (key || '').trim() || null; }
+  setNeuralVoice(id) { this.opts.neuralVoice = id || null; }
   setLang(lang) { this.opts.lang = lang; }
 }
 

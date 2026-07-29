@@ -10,7 +10,7 @@ Asistente virtual **controlado por voz**, empaquetado como **PWA instalable en A
 
 - **Offline total:** app shell precacheada por un Service Worker; funciona sin conexión.
 - **Voz (STT):** Web Speech API nativa (rápida, integrada en Android) con **adaptador Whisper** vía Transformers.js (WASM/ONNX) para mayor precisión.
-- **Voz (TTS):** SpeechSynthesis con selección de voz local en español, sin latencia.
+- **Voz (TTS):** SpeechSynthesis con selección de voz local en español y **voces neuronales Piper offline** (es_ES/es_MX, 63–77 MB por voz en OPFS, gratis) para un habla mucho más natural; la voz del sistema queda como respaldo automático.
 - **Wake word / VAD:** palabra de activación por escucha continua + detección de actividad de voz por energía (RMS) para autocortar la grabación.
 - **IA local:** LLM en el dispositivo con **WebLLM** sobre **WebGPU** (modelos pequeños: Qwen3/3.5, Gemma 3, Llama 3.2, Phi-4 mini; por defecto **Qwen3 1.7B**). **Cerebro de reglas de respaldo** cuando no hay WebGPU.
 - **Memoria persistente:** notas, tareas, eventos, alarmas, historial y preferencias en **IndexedDB**.

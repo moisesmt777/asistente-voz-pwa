@@ -12,6 +12,7 @@ Marca cada casilla `[ ]` → `[x]` conforme avances.
 > · **Rediseño UI (v1.4.0):** pantalla principal tipo launcher (iconos de colores con contadores: Tareas, Notas, Agenda, Recordatorios, Conversación, Ajustes); el orbe se acerca al icono de lo que estés usando; la conversación vive en su propio panel; iconografía SVG profesional (sin emojis).
 > · **Proactividad y personalidad (v1.5.0):** identidad orientada a la acción con guardrail anti‑alucinación de capacidades; tono adaptativo según urgencia del mensaje; briefing de agenda al abrir (eventos de hoy, tareas pendientes, choques de horario a <30 min); consciencia de batería (contexto para la IA, aviso con nivel bajo y confirmación antes de descargas grandes sin cargador).
 > · **Agencia con deep links (v1.6.0):** skills de acción con botón de confirmación — llamar, WhatsApp/SMS con el mensaje ya escrito, correo, rutas y búsquedas en Maps, música en YouTube y búsqueda en Google; mini‑agenda de contactos en memoria («recuerda que el número de mamá es…») y Contact Picker del sistema como respaldo (guarda el contacto elegido para la próxima).
+> · **Voz neuronal (v1.7.0):** Fase 2C hecha con **Piper** (`vits-web`): 3 voces en español descargables en Ajustes (~63–77 MB, OPFS, 100 % offline y gratis), con la voz del sistema como respaldo automático.
 
 ---
 
@@ -80,9 +81,10 @@ Para dictados largos o entornos ruidosos, más exacto que la Web Speech API.
 
 **Listo cuando:** puedes elegir "alta precisión", dictar una nota larga y transcribe bien sin trabar la app.
 
-### 2C. Voz más humana con Kokoro TTS (opcional)
-- [ ] Integrar **Kokoro TTS** (vía ONNX/Transformers.js, p. ej. `kokoro-js`) como voz offline de alta calidad.
-- [ ] Mantener `SpeechSynthesis` nativa como respaldo sin descarga.
+### 2C. Voz más humana con TTS neuronal ✅ (hecho con Piper)
+- [x] Integrar **Kokoro TTS** (vía ONNX/Transformers.js, p. ej. `kokoro-js`) como voz offline de alta calidad. *(Hecho con **Piper vía `vits-web`** en lugar de Kokoro: voces nativas en español — Dave y Sharvard (España), Claude (México, alta calidad) — de 63–77 MB por voz, guardadas en **OPFS** y sintetizadas 100 % en el dispositivo (WASM/CPU, sin tocar la GPU del LLM). Kokoro (`ef_dora`) queda anotado como alternativa si se quiere comparar.)*
+- [x] Mantener `SpeechSynthesis` nativa como respaldo sin descarga. *(Sigue disponible en Ajustes y es el respaldo automático si la neuronal falla.)*
+- [ ] Probar en tu teléfono: Ajustes → Voz del asistente → descargar una voz neuronal y escucharla.
 
 **Listo cuando:** el asistente te habla con una voz natural aunque estés sin internet.
 
@@ -94,7 +96,7 @@ Para dictados largos o entornos ruidosos, más exacto que la Web Speech API.
 
 - [x] Reforzar el **prompting adaptativo** ya existente: inyectar tus preferencias, tus comandos más usados y tu contexto (tareas/eventos) en cada respuesta. *(Hecho: además, los recuerdos recuperados por significado se inyectan al system prompt y el tono del asistente es editable en Ajustes → Aprendizaje.)*
 - [x] Añadir **búsqueda semántica local (RAG)** sobre tus notas: generar *embeddings* con Transformers.js (modelo multilingüe pequeño, p. ej. `multilingual-e5-small`) y guardarlos en IndexedDB, para que responda "¿qué anoté sobre el proveedor?" buscando por significado. *(Hecho: `Xenova/multilingual-e5-small` cuantizado ~110 MB —descarga única activable en Ajustes—; prefijos query/passage, similitud coseno; indexa notas, tareas, eventos y alarmas al vuelo. Sin LLM también responde "¿qué anoté sobre…?" directamente con los recuerdos.)*
-- [x] Guardar blobs grandes (audios, modelos) en **OPFS** en vez de IndexedDB. *(N/A por ahora: la app no persiste blobs propios — los modelos los cachean el navegador y las librerías, y los audios no se guardan. Se retomará si Kokoro/Whisper locales lo necesitan.)*
+- [x] Guardar blobs grandes (audios, modelos) en **OPFS** en vez de IndexedDB. *(Actualización v1.7.0: las voces neuronales Piper ya se guardan en OPFS vía vits-web; el resto de modelos los cachean el navegador y las librerías.)*
 - [x] Panel de "Aprendizaje": ver y editar lo que el asistente ha memorizado sobre ti (transparencia y control). *(Card en Ajustes: tono, comandos más usados con su feedback, estado del índice semántico con reindexado y "olvidar estadísticas".)*
 - [x] Exportar/importar tu memoria (respaldo cifrado opcional). *(JSON con ítems, historial, preferencias y estadísticas; los vectores se regeneran reindexando tras importar. Cifrado: pendiente como opcional.)*
 - [ ] Probar en tu teléfono: activar la búsqueda semántica en Ajustes → Aprendizaje, crear un par de notas y preguntar "¿qué anoté sobre…?".

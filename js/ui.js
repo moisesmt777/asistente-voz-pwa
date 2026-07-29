@@ -38,7 +38,7 @@ export const ICON = {
 const TOAST_ICON = {
   '✅': 'ok', '👍': 'ok', '⚠️': 'warn', '👎': 'no', '🎙️': 'mic', '👂': 'wave',
   '🧠': 'info', '💾': 'save', '🗑️': 'trash', '🔔': 'bell', '🔎': 'search',
-  '⏰': 'clock', '♻️': 'info', '⬇️': 'save'
+  '⏰': 'clock', '♻️': 'info', '⬇️': 'save', '🔊': 'wave'
 };
 
 /* Tiles del home (estilo launcher de smartphone) */
