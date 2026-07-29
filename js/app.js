@@ -10,7 +10,7 @@
      → respuesta en pantalla + voz (TTS) → memoria + estadísticas (auto-mejora)
    ============================================================ */
 import { VoiceEngine } from './voice-engine.js';
-import { AIBrain, MemoryStore } from './ai-brain.js';
+import { AIBrain, MemoryStore, RECOMMENDED_MODELS } from './ai-brain.js';
 import { CommandRouter, cuando, fechaCorta, normName } from './commands.js';
 import { SemanticMemory } from './semantic-memory.js';
 import { NeuralTTS, NEURAL_VOICES } from './neural-tts.js';
@@ -63,9 +63,13 @@ class App {
     this.ui.setState('idle');
     this.ui.setBrandSub(brainState.webgpu ? 'IA local disponible' : 'Modo reglas (sin WebGPU)');
 
-    // Reactivar el último modelo usado (con progreso visible y detector de atascos)
+    // Proteger las cachés de modelos frente al borrado automático del sistema
+    this._ensurePersistentStorage();
+
+    // Reactivar el último modelo usado (salvo que hayas desactivado la autocarga)
     const savedModel = await this.memory.getPref('model', null);
-    if (brainState.webgpu && savedModel) this._loadModel(savedModel);
+    if (brainState.webgpu && savedModel && (await this.memory.getPref('autoloadModel', true)))
+      this._loadModel(savedModel);
 
     // Memoria semántica: indexa cambios al vuelo y reactívala si ya se activó
     this.memory.onchange = (op, item) => {
@@ -151,7 +155,8 @@ class App {
 
         await this.voice.speak(cmd.reply);
       } else {
-        // 2) Cerebro conversacional
+        // 2) Cerebro conversacional (con autocarga desactivada, la prepara ahora)
+        this._lazyLoadModel();
         const res = await this.brain.chat(text);
         const msg = await this.memory.addMessage({ role: 'assistant', text: res.text, cmd: 'chat' });
         this.msgCmd[msg.id] = 'chat';
@@ -246,7 +251,13 @@ class App {
         </select>
         <button class="btn block" id="loadModel" style="margin-top:10px">Descargar y activar modelo</button>
         <div class="progress" id="modelProg" style="display:none"><i></i></div>
-        <div class="muted" id="modelMsg" style="margin-top:6px"></div>` : ''}
+        <div class="muted" id="modelMsg" style="margin-top:6px"></div>
+        <label class="lbl">Cargar la IA al abrir la app</label>
+        <select class="field" id="setAutoload">
+          <option value="1" ${prefs.autoloadModel !== false ? 'selected' : ''}>Sí — lista para responder enseguida</option>
+          <option value="0" ${prefs.autoloadModel === false ? 'selected' : ''}>No — arranque instantáneo; se prepara al hablarle</option>
+        </select>
+        <div class="muted" style="margin-top:6px">El modelo se descarga una sola vez; al abrir la app solo se prepara desde la memoria del teléfono.</div>` : ''}
       </div>
 
       <div class="card">
@@ -315,7 +326,8 @@ class App {
 
       <div class="card">
         <h3>Datos</h3>
-        <div class="muted">Todo se guarda en tu dispositivo (IndexedDB). Nada sale de tu teléfono.</div>
+        <div class="muted">Todo se guarda en tu dispositivo (IndexedDB y OPFS). Nada sale de tu teléfono.</div>
+        <div class="muted" id="storeInfo" style="margin-top:6px">Calculando almacenamiento…</div>
         <div class="inrow" style="margin-top:10px">
           <button class="btn ghost" id="exportData" style="flex:1">Exportar copia</button>
           <button class="btn ghost" id="importData" style="flex:1">Importar copia</button>
@@ -323,7 +335,7 @@ class App {
         <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.9.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.9.1</div>
     `;
     this._wireSettings();
   }
@@ -439,6 +451,15 @@ class App {
     });
     this._updateLearnPanel();
     this._renderNeuralVoices();
+    this._updateStorageInfo();
+
+    const auto = g('setAutoload');
+    auto && auto.addEventListener('change', async () => {
+      await this.memory.setPref('autoloadModel', auto.value === '1');
+      this.ui.toast('🧠', auto.value === '1'
+        ? 'La IA se preparará al abrir la app'
+        : 'Arranque instantáneo: la IA se preparará cuando le hables');
+    });
 
     g('askNotif').addEventListener('click', () => {
       if ('Notification' in window) Notification.requestPermission().then((p) => this.ui.toast('🔔', 'Notificaciones: ' + p));
@@ -479,23 +500,57 @@ class App {
     }
   }
 
+  /* Con la autocarga desactivada, prepara la IA en cuanto le hablas
+     (esta respuesta la da el cerebro de reglas; las siguientes ya con LLM) */
+  async _lazyLoadModel() {
+    if (this.brain.engine || this.brain.loading || !this.brain.webgpu) return;
+    if (await this.memory.getPref('autoloadModel', true)) return; // ya se cargó al abrir
+    const id = await this.memory.getPref('model', null);
+    if (!id) return;
+    this.ui.toast('🧠', `Preparando ${App.modelLabel(id)}…`);
+    this._loadModel(id);
+  }
+
+  /* Pide almacenamiento persistente: sin esto el sistema puede borrar los
+     modelos cacheados cuando falta espacio y habría que descargarlos otra vez */
+  async _ensurePersistentStorage() {
+    try {
+      if (!(navigator.storage && navigator.storage.persist)) return false;
+      if (await navigator.storage.persisted()) return true;
+      return await navigator.storage.persist();
+    } catch (e) { return false; }
+  }
+
   /* ---- Carga del modelo LLM unificada: la autocarga y el botón de Ajustes
      comparten progreso, mensajes y detector de atascos ---- */
+  static modelLabel(id) {
+    const m = RECOMMENDED_MODELS.find((x) => x.id === id);
+    return m ? m.label.replace(/\s*\(.*\)$/, '') : id;
+  }
+
   _mlProgress(id, r) {
     const pct = Math.round((r.progress || 0) * 100);
-    this._ml = { id, pct, text: r.text || `Cargando… ${pct}%`, at: Date.now() };
-    this.ui.setBrandSub(`Cargando IA (${pct}%)…`);
+    this._ml = { id, pct, text: r.text || `${pct}%`, at: Date.now(), cached: this._mlCached };
+    const label = App.modelLabel(id);
+    this.ui.setBrandSub(this._mlCached
+      ? `Preparando ${label} desde la memoria (${pct}%)…`
+      : `Descargando ${label} (${pct}%)…`);
     const body = this.ui.el.settingsBody;
     const prog = body.querySelector('#modelProg');
     const bar = body.querySelector('#modelProg i');
     const msg = body.querySelector('#modelMsg');
     if (prog) prog.style.display = 'block';
     if (bar) bar.style.width = pct + '%';
-    if (msg) msg.textContent = `${id} — ${this._ml.text}`;
+    if (msg) msg.textContent = this._mlCached
+      ? `${label}: cargando desde la memoria del teléfono (no se descarga otra vez) — ${pct}%`
+      : `${label} — ${this._ml.text}`;
   }
 
   async _loadModel(id) {
-    this._ml = { id, pct: 0, text: 'Preparando…', at: Date.now() };
+    // ¿Ya se descargó antes? Entonces esto es solo preparar, no bajar datos
+    const ready = await this.memory.getPref('modelsReady', []);
+    this._mlCached = Array.isArray(ready) && ready.includes(id);
+    this._ml = { id, pct: 0, text: 'Preparando…', at: Date.now(), cached: this._mlCached };
     // Atasco: 45 s sin avance -> sugerir recargar (no se puede cancelar en vuelo)
     const watch = setInterval(() => {
       if (this._ml && Date.now() - this._ml.at > 45000) {
@@ -504,9 +559,15 @@ class App {
     }, 15000);
     try {
       await this.brain.loadModel(id, (r) => this._mlProgress(id, r));
+      if (!this._mlCached) {
+        const list = Array.isArray(ready) ? ready.slice() : [];
+        list.push(id);
+        await this.memory.setPref('modelsReady', list);
+      }
       this.ui.setBrandSub('IA local activa');
       const msg = this.ui.el.settingsBody.querySelector('#modelMsg');
-      if (msg) msg.textContent = 'Modelo activo: ' + id;
+      if (msg) msg.textContent = 'Modelo activo: ' + App.modelLabel(id);
+      this._updateStorageInfo();
       return true;
     } catch (e) {
       this.ui.setBrandSub('IA local disponible');
@@ -516,12 +577,28 @@ class App {
     } finally {
       clearInterval(watch);
       this._ml = null;
+      this._mlCached = false;
       const body = this.ui.el.settingsBody;
       const load = body.querySelector('#loadModel');
       if (load) { load.disabled = false; load.textContent = 'Descargar y activar modelo'; }
       const prog = body.querySelector('#modelProg');
       if (prog) setTimeout(() => { prog.style.display = 'none'; }, 900);
     }
+  }
+
+  /* Espacio usado y si el sistema puede borrar las cachés de modelos */
+  async _updateStorageInfo() {
+    const el = this.ui.el.settingsBody.querySelector('#storeInfo');
+    if (!el) return;
+    if (!(navigator.storage && navigator.storage.estimate)) { el.textContent = ''; return; }
+    try {
+      const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+      const gb = (n) => (n / 1073741824).toFixed(2) + ' GB';
+      const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+      el.textContent = `Usado: ${gb(usage)} de ${gb(quota)} disponibles · ` +
+        (persisted ? 'almacenamiento protegido: el sistema no borrará tus modelos.'
+                   : 'sin protección: si falta espacio, el sistema podría borrar los modelos descargados.');
+    } catch (e) { el.textContent = ''; }
   }
 
   /* Voces neuronales Piper: lista con estado y descarga en Ajustes */

@@ -7,7 +7,7 @@
      · Modelos/pesos (WebLLM/HF)       -> los gestiona la propia librería en Cache API;
                                           aquí solo damos fallback cache-first perezoso.
    ============================================================ */
-const VERSION = 'v1.9.0';
+const VERSION = 'v1.9.1';
 const APP_CACHE = `asistente-app-${VERSION}`;
 const CDN_CACHE = `asistente-cdn-${VERSION}`;
 const RUNTIME_CACHE = `asistente-rt-${VERSION}`;
@@ -38,10 +38,18 @@ const CDN_HOSTS = [
   'esm.run',
   'cdn.jsdelivr.net',
   'unpkg.com',
-  'huggingface.co',
-  'cdn-lfs.huggingface.co',
   'raw.githubusercontent.com'
 ];
+
+/* Pesos de modelos (LLM, embeddings, Whisper, voces Piper): NO se cachean aquí.
+   Cada librería tiene su propio almacén (WebLLM -> caché "webllm/model",
+   Transformers.js -> "transformers-cache", vits-web -> OPFS). Duplicarlos
+   costaría gigabytes y aumentaría el riesgo de que el navegador desaloje
+   la caché y haya que volver a descargar. */
+const MODEL_HOSTS = ['huggingface.co', 'hf.co'];
+const isModelWeight = (url) =>
+  MODEL_HOSTS.some((h) => url.hostname === h || url.hostname.endsWith('.' + h)) ||
+  url.pathname.includes('piper-voices');
 
 /* ---------- Instalación: precache del app shell ---------- */
 self.addEventListener('install', (event) => {
@@ -90,8 +98,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Los pesos de voces Piper los gestiona vits-web en OPFS: no duplicarlos en caché
-  if (url.pathname.includes('piper-voices')) return;
+  // Pesos de modelos -> los gestiona su propia librería (ver MODEL_HOSTS)
+  if (isModelWeight(url)) return;
 
   // 3) CDN de librerías -> cache-first (persisten tras la primera carga)
   if (CDN_HOSTS.some((h) => url.hostname.endsWith(h))) {
