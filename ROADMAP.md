@@ -13,6 +13,7 @@ Marca cada casilla `[ ]` → `[x]` conforme avances.
 > · **Proactividad y personalidad (v1.5.0):** identidad orientada a la acción con guardrail anti‑alucinación de capacidades; tono adaptativo según urgencia del mensaje; briefing de agenda al abrir (eventos de hoy, tareas pendientes, choques de horario a <30 min); consciencia de batería (contexto para la IA, aviso con nivel bajo y confirmación antes de descargas grandes sin cargador).
 > · **Agencia con deep links (v1.6.0):** skills de acción con botón de confirmación — llamar, WhatsApp/SMS con el mensaje ya escrito, correo, rutas y búsquedas en Maps, música en YouTube y búsqueda en Google; mini‑agenda de contactos en memoria («recuerda que el número de mamá es…») y Contact Picker del sistema como respaldo (guarda el contacto elegido para la próxima).
 > · **Voz neuronal (v1.7.0):** Fase 2C hecha con **Piper** (`vits-web`): 3 voces en español descargables en Ajustes (~63–77 MB, OPFS, 100 % offline y gratis), con la voz del sistema como respaldo automático.
+> · **Navegación a pantalla completa (v1.8.0):** Tareas/Notas/Agenda/Recordatorios, Conversación y Ajustes abren como vistas completas con transición lateral, flecha ← y soporte del botón/gesto "atrás" de Android (historial), en lugar de la ventana inferior.
 
 ---
 

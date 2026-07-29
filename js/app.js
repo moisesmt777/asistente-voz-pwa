@@ -189,9 +189,7 @@ class App {
 
     document.querySelectorAll('[data-close]').forEach((b) =>
       b.addEventListener('click', () => this.ui.closeSheet(b.dataset.close)));
-    $('#panelOverlay').addEventListener('click', () => this.ui.closeSheet('panel'));
-    $('#settingsOverlay').addEventListener('click', () => this.ui.closeSheet('settings'));
-    $('#chatOverlay').addEventListener('click', () => this.ui.closeSheet('chat'));
+    // (las vistas a pantalla completa se cierran con la flecha ← o el "atrás" del sistema)
 
     document.querySelectorAll('#panelTabs .tab').forEach((b) =>
       b.addEventListener('click', () => this.ui.renderPanel(b.dataset.tab)));
@@ -321,7 +319,7 @@ class App {
         <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn ghost block" id="clearData" style="margin-top:10px;color:var(--danger)">Borrar todos los datos</button>
       </div>
-      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.7.0</div>
+      <div class="muted" style="text-align:center;padding:6px">Asistente de Voz · PWA offline-first · v1.8.0</div>
     `;
     this._wireSettings();
   }

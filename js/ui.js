@@ -66,9 +66,9 @@ export class UI {
       conv: $('#conversation'),
       brandSub: $('#brandSub'),
       netChip: $('#netChip'),
-      panel: $('#panel'), panelOverlay: $('#panelOverlay'), panelBody: $('#panelBody'),
-      settings: $('#settings'), settingsOverlay: $('#settingsOverlay'), settingsBody: $('#settingsBody'),
-      chat: $('#chat'), chatOverlay: $('#chatOverlay'),
+      panel: $('#panel'), panelBody: $('#panelBody'),
+      settings: $('#settings'), settingsBody: $('#settingsBody'),
+      chat: $('#chat'),
       tiles: $('#tiles'), replyCard: $('#replyCard'),
       toasts: $('#toasts')
     };
@@ -76,6 +76,18 @@ export class UI {
     this.onOpenSettings = null; // abre Ajustes (lo conecta app.js)
     this.onAction = null; // acción con datos (p. ej. abrir Contact Picker)
     this.activeTab = 'tareas';
+    this._view = null;    // vista abierta: 'panel' | 'chat' | 'settings' | null
+
+    // El botón/gesto "atrás" del sistema navega entre vistas (Android/PWA)
+    window.addEventListener('popstate', (e) => {
+      if (e.state && e.state.view && this.el[e.state.view]) {
+        this._view = e.state.view;
+        this.el[e.state.view].classList.add('open');
+      } else {
+        this._closeViewVisual();
+      }
+    });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.closeSheet(); });
   }
 
   /* -------- Estado visual del asistente -------- */
@@ -151,14 +163,31 @@ export class UI {
     }, ms);
   }
 
-  /* -------- Hojas (sheets) -------- */
+  /* -------- Vistas a pantalla completa (navegación tipo app) -------- */
   openSheet(which) {
-    const s = this.el[which], o = this.el[which + 'Overlay'];
-    o.classList.add('show'); s.classList.add('open');
+    if (!this.el[which] || this._view === which) return;
+    if (this._view) {
+      // Cambio directo de vista: sustituye la entrada del historial
+      this.el[this._view] && this.el[this._view].classList.remove('open');
+      history.replaceState({ view: which }, '');
+    } else {
+      history.pushState({ view: which }, '');
+    }
+    this._view = which;
+    this.el[which].classList.add('open');
   }
-  closeSheet(which) {
-    const s = this.el[which], o = this.el[which + 'Overlay'];
-    o.classList.remove('show'); s.classList.remove('open');
+
+  /* La flecha ← va por el historial: así el "atrás" del sistema hace lo mismo */
+  closeSheet() {
+    if (this._view) history.back();
+  }
+
+  _closeViewVisual() {
+    ['panel', 'chat', 'settings'].forEach((k) => {
+      const v = this.el[k];
+      v && v.classList.remove('open');
+    });
+    this._view = null;
   }
 
   /* -------- Home: cuadrícula de iconos (estilo launcher) -------- */
@@ -263,6 +292,8 @@ export class UI {
     if (tab) this.activeTab = tab;
     document.querySelectorAll('#panelTabs .tab').forEach((b) =>
       b.classList.toggle('on', b.dataset.tab === this.activeTab));
+    const h = $('#panelTitle');
+    if (h) h.textContent = ({ tareas: 'Tareas', notas: 'Notas', eventos: 'Agenda', alarmas: 'Recordatorios' })[this.activeTab] || 'Mis cosas';
     const body = this.el.panelBody;
     const items = await this.memory.listItems(this._singular(this.activeTab));
 

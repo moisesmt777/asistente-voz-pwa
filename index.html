@@ -82,12 +82,13 @@
     </footer>
   </div>
 
-  <!-- ====== Panel lateral: Mis cosas (skills) ====== -->
-  <div id="panelOverlay" class="overlay"></div>
-  <aside id="panel" class="sheet">
+  <!-- ====== Vista: Mis cosas (skills) ====== -->
+  <aside id="panel" class="view">
     <div class="sheet-head">
-      <h2>Mis cosas</h2>
-      <button class="icon-btn" data-close="panel">✕</button>
+      <button class="icon-btn" data-close="panel" aria-label="Volver">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <h2 id="panelTitle">Tareas</h2>
     </div>
     <div class="tabs" id="panelTabs">
       <button class="tab on" data-tab="tareas">
@@ -106,22 +107,24 @@
     <div class="sheet-body" id="panelBody"></div>
   </aside>
 
-  <!-- ====== Conversación ====== -->
-  <div id="chatOverlay" class="overlay"></div>
-  <aside id="chat" class="sheet">
+  <!-- ====== Vista: Conversación ====== -->
+  <aside id="chat" class="view">
     <div class="sheet-head">
+      <button class="icon-btn" data-close="chat" aria-label="Volver">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
       <h2>Conversación</h2>
-      <button class="icon-btn" data-close="chat">✕</button>
     </div>
     <div class="sheet-body" id="conversation" aria-live="polite"></div>
   </aside>
 
-  <!-- ====== Ajustes ====== -->
-  <div id="settingsOverlay" class="overlay"></div>
-  <aside id="settings" class="sheet">
+  <!-- ====== Vista: Ajustes ====== -->
+  <aside id="settings" class="view">
     <div class="sheet-head">
+      <button class="icon-btn" data-close="settings" aria-label="Volver">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
       <h2>Ajustes</h2>
-      <button class="icon-btn" data-close="settings">✕</button>
     </div>
     <div class="sheet-body" id="settingsBody"><!-- render dinámico --></div>
   </aside>
